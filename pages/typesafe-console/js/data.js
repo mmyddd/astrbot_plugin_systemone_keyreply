@@ -141,7 +141,7 @@
     tryResult: null,
     qa: null,
     qaTableKey: 'global',
-    qaDraft: [],
+    qaGroups: [],
     qaDirty: false,
     qaTestResult: null,
     lastSyncAt: null

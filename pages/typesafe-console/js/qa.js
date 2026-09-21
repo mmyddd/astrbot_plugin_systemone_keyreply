@@ -83,38 +83,72 @@
     return base + ' · ' + t.ids[0] + ' 等 ' + t.ids.length + ' 个会话';
   }
 
-  /* ── 草稿 ─────────────────────────────────────────────── */
+  /* ── 草稿：以「答案」为中心组织 ─────────────────────────
+     数据结构仍然是一组问答对（每条 Q 带 answer_key），
+     但编辑时按答案分组：一个 A 下挂若干 Q，A 与 hint 只写一次。
+     ─────────────────────────────────────────────────────── */
   function loadDraft() {
     const table = currentTable();
     state.qaTableKey = table ? table.key : 'global';
-    state.qaDraft = (table && table.entries ? table.entries : []).map(e => ({
-      _id: nextId(),
-      question: e.question || '',
-      answerText: (e.answer && e.answer.text) || '',
-      answerImages: ((e.answer && e.answer.images) || []).join('\n'),
-      _hadAnswer: Boolean(e.answer && ((e.answer.text || '').trim() || (e.answer.images || []).length)),
-      enabled: e.enabled !== false,
-      answerKey: e.answer_key || ''
-    }));
+    const entries = (table && table.entries) ? table.entries : [];
+
+    // 按「答案内容 + hint」聚合为组；同组共享一份 A 与 hint
+    const groups = [];
+    const bySig = new Map();
+    entries.forEach(en => {
+      const ans = en.answer || {};
+      const images = (ans.images || []).join('\n');
+      const hint = en.hint || '';
+      const sig = (ans.text || '') + '\u0000' + images + '\u0000' + hint;
+      let g = bySig.get(sig);
+      if (!g) {
+        g = {
+          _id: nextId(),
+          answerText: ans.text || '',
+          answerImages: images,
+          hint: hint,
+          questions: [],
+          enabled: en.enabled !== false,
+          answerKey: en.answer_key || ''
+        };
+        bySig.set(sig, g);
+        groups.push(g);
+      }
+      g.questions.push({ _id: nextId(), text: en.question || '', enabled: en.enabled !== false });
+      if (en.enabled === false) g.enabled = false;
+    });
+
+    if (!groups.length) {
+      groups.push({ _id: nextId(), answerText: '', answerImages: '', hint: '', questions: [], enabled: true, answerKey: '' });
+    }
+    state.qaGroups = groups;
     state.qaDirty = false;
     render();
   }
 
   function collectDraft() {
-    return state.qaDraft
-      .filter(row => String(row.question || '').trim())
-      .map(row => {
+    const out = [];
+    (state.qaGroups || []).forEach(g => {
+      const answerText = String(g.answerText || '');
+      const images = format.lines(g.answerImages);
+      const hint = String(g.hint || '').trim();
+      const qs = (g.questions || []).filter(q => String(q.text || '').trim());
+      // 没有 Q 的组不保存（避免留下无引用的空答案）
+      qs.forEach(q => {
+        const answer = { text: answerText, images: images };
         const entry = {
-          question: String(row.question).trim(),
-          answer: {
-            text: String(row.answerText || ''),
-            images: format.lines(row.answerImages)
-          },
-          enabled: row.enabled !== false
+          question: String(q.text).trim(),
+          answer: answer,
+          enabled: q.enabled !== false && g.enabled !== false
         };
-        // answer_key 由后端在保存时按答案指纹重新分组，这里不回传旧键
-        return entry;
+        // hint 是答案级的：只写在每个 Q 上，保存后由后端归入同一个答案池
+        if (hint) entry.hint = hint;
+        // 复用原有分组键，保证「一 A 多 Q」保存后仍是一组
+        if (g.answerKey) entry.answer_key = g.answerKey;
+        out.push(entry);
       });
+    });
+    return out;
   }
 
   /* ── 渲染 ─────────────────────────────────────────────── */
@@ -183,133 +217,89 @@
     if (!host) return;
     host.textContent = '';
 
-    if (!state.qaDraft.length) {
-      host.appendChild(el('div', 'empty', '该作用域还没有问答对。点下方「新增一条」开始，或从 KeyReply 导入。'));
+    const groups = state.qaGroups || [];
+    if (!groups.length) {
+      host.appendChild(el('div', 'empty', '该作用域还没有问答对。点下方「新增一组」开始，或从 KeyReply 导入。'));
       return;
     }
 
-    // 按答案内容分组显示，直观呈现「多个 Q 指向同一个 A」
-    const groups = new Map();
-    state.qaDraft.forEach(row => {
-      const sig = row.answerText + '\u0000' + row.answerImages;
-      if (!groups.has(sig)) groups.set(sig, []);
-      groups.get(sig).push(row);
-    });
-
-    let idx = 0;
-    groups.forEach(rows => {
-      const wrap = el('div', 'qa-group');
-      // 仅当确实存在共享答案时才显示分组头，单条 Q 不额外占位
-      if (rows.length > 1) {
-        const head = el('div', 'qa-group-head');
-        head.appendChild(el('span', 'pill pill-brand', '多 Q 一 A'));
-        head.appendChild(el('span', 'qa-group-title', rows.length + ' 个问题共用同一答案'));
-        wrap.appendChild(head);
-      }
-      rows.forEach(row => wrap.appendChild(buildRow(row, idx++)));
-      host.appendChild(wrap);
-    });
+    groups.forEach((g, gi) => host.appendChild(buildGroup(g, gi)));
   }
 
-  function buildRow(row, index) {
-    // 默认折叠：折叠态只显示 Q 与 A，点击展开才出现全部编辑控件
-    const item = el('details', 'qa-item' + (row.enabled === false ? ' is-disabled' : ''));
-    item.open = Boolean(row._expand);
+  /** 一个答案组：A + hint 只写一次，下面挂若干 Q。 */
+  function buildGroup(group, gi) {
+    const card = el('div', 'qa-group-card' + (group.enabled === false ? ' is-disabled' : ''));
 
-    /* ── 折叠摘要：只显示 Q 与 A ── */
-    const summary = el('summary', 'qa-item-summary');
-    summary.appendChild(el('span', 'qa-item-index', '#' + (index + 1)));
-    if (row.enabled === false) summary.appendChild(el('span', 'pill pill-mute', '已停用'));
+    /* ── 组头：序号 + 联动的 Q 数 + 启用 + 删除 ── */
+    const head = el('div', 'qa-group-card-head');
+    head.appendChild(el('span', 'qa-group-card-index', '答案 #' + (gi + 1)));
 
-    const texts = el('span', 'qa-item-texts');
-    const qSpan = el('span', 'qa-item-q', row.question || '（未填写问题）');
-    const aSpan = el('span', 'qa-item-a', answerSummaryOf(row));
-    texts.appendChild(qSpan);
-    texts.appendChild(aSpan);
-    summary.appendChild(texts);
+    const qCount = (group.questions || []).length;
+    const badge = el('span', 'pill ' + (qCount > 1 ? 'pill-brand' : 'pill-mute'),
+      qCount > 1 ? qCount + ' 个问题共用' : (qCount === 1 ? '1 个问题' : '尚未添加问题'));
+    head.appendChild(badge);
 
-    const thumb = answerThumb(row);
-    if (thumb) summary.appendChild(thumb);
-
-    summary.appendChild(el('span', 'qa-item-chevron'));
-    item.appendChild(summary);
-
-    /* ── 展开区：编辑控件 ── */
-    const body = el('div', 'qa-item-body');
-
-    const head = el('div', 'qa-row-head');
     const toggleWrap = el('label', 'switch');
     const cb = el('input');
     cb.type = 'checkbox';
-    cb.checked = row.enabled !== false;
+    cb.checked = group.enabled !== false;
+    cb.title = '停用整组';
     cb.addEventListener('change', () => {
-      row.enabled = cb.checked;
+      group.enabled = cb.checked;
+      card.classList.toggle('is-disabled', !cb.checked);
       state.qaDirty = true;
-      item.classList.toggle('is-disabled', !cb.checked);
       updateDirty();
     });
     toggleWrap.appendChild(cb);
     toggleWrap.appendChild(el('span', 'switch-track'));
     head.appendChild(toggleWrap);
-    head.appendChild(el('span', 'field-meta', '启用该条'));
 
-    const del = el('button', 'btn btn-danger btn-sm', '删除');
+    const del = el('button', 'btn btn-danger btn-sm', '删除整组');
     del.type = 'button';
     del.style.marginLeft = 'auto';
-    del.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      state.qaDraft = state.qaDraft.filter(r => r !== row);
+    del.addEventListener('click', () => {
+      state.qaGroups = state.qaGroups.filter(x => x !== group);
       state.qaDirty = true;
       renderRows();
       updateDirty();
     });
     head.appendChild(del);
-    body.appendChild(head);
+    card.appendChild(head);
 
-    // Q
-    const qField = el('div', 'field');
-    const qHead = el('div', 'field-head');
-    qHead.appendChild(el('label', 'field-label', '问题 Q（支持 % 通配）'));
-    qHead.appendChild(el('span', 'field-hint', '例如 怎么安装% / %今天%天气%'));
-    qField.appendChild(qHead);
-    const qInput = el('input', 'input');
-    qInput.type = 'text';
-    qInput.value = row.question;
-    qInput.placeholder = '用户可能怎么问';
-    qInput.addEventListener('input', () => {
-      row.question = qInput.value;
-      qSpan.textContent = row.question || '（未填写问题）';
-      state.qaDirty = true;
-      updateDirty();
-    });
-    qField.appendChild(qInput);
-    body.appendChild(qField);
+    const body = el('div', 'qa-group-card-body');
 
-    // A
+    /* ── 答案 A（只写一次）── */
     const aField = el('div', 'field');
-    aField.appendChild(el('div', 'field-head')).appendChild(el('label', 'field-label', '答案 A'));
+    const aHead = el('div', 'field-head');
+    aHead.appendChild(el('label', 'field-label', '答案 A'));
+    aHead.appendChild(el('span', 'field-hint', '被下面所有问题共用'));
+    // 图片缩略图：加载失败自动退化为链接文字
+    const thumb = answerThumb({ answerImages: group.answerImages });
+    if (thumb) {
+      thumb.classList.add('qa-thumb-inline');
+      aHead.appendChild(thumb);
+    }
+    aField.appendChild(aHead);
     const aArea = el('textarea', 'textarea');
-    aArea.rows = 2;
-    aArea.value = row.answerText;
-    aArea.placeholder = '命中后由 LLM 围绕这段内容生成回复';
+    aArea.rows = 3;
+    aArea.value = group.answerText;
+    aArea.placeholder = '命中后由 LLM 围绕这段内容生成回复；Jev 也会看到它';
     aArea.addEventListener('input', () => {
-      row.answerText = aArea.value;
-      aSpan.textContent = answerSummaryOf(row);
+      group.answerText = aArea.value;
       state.qaDirty = true;
       updateDirty();
     });
     aField.appendChild(aArea);
 
     const imgDetails = el('details', 'qa-images');
+    if (format.lines(group.answerImages).length) imgDetails.open = true;
     imgDetails.appendChild(el('summary', null, '答案附带图片（可选）'));
     const imgArea = el('textarea', 'textarea');
     imgArea.rows = 2;
-    imgArea.value = row.answerImages;
+    imgArea.value = group.answerImages;
     imgArea.placeholder = '每行一个图片 URL';
     imgArea.addEventListener('input', () => {
-      row.answerImages = imgArea.value;
-      aSpan.textContent = answerSummaryOf(row);
-      // 图片是答案的一部分，填写后自动展开该分组便于核对
+      group.answerImages = imgArea.value;
       state.qaDirty = true;
       updateDirty();
     });
@@ -317,15 +307,96 @@
     aField.appendChild(imgDetails);
     body.appendChild(aField);
 
-    item.appendChild(body);
-    return item;
+    /* ── Jev 判定辅助说明（答案级，只写一次）── */
+    const hField = el('div', 'field');
+    const hHead = el('div', 'field-head');
+    hHead.appendChild(el('label', 'field-label', 'Jev 判定辅助说明（可选）'));
+    hHead.appendChild(el('span', 'field-hint', '不会发给用户，仅用于判定'));
+    hField.appendChild(hHead);
+    const hArea = el('textarea', 'textarea');
+    hArea.rows = 2;
+    hArea.value = group.hint;
+    hArea.placeholder = '例如：该回答适合用户询问金锭怎么做的语境';
+    hArea.addEventListener('input', () => {
+      group.hint = hArea.value;
+      state.qaDirty = true;
+      updateDirty();
+    });
+    hField.appendChild(hArea);
+    hField.appendChild(el('p', 'field-desc',
+      'Jev 会同时看到这条答案、下面每个问题与这段说明，据此判断消息是真提问还是假命中。'));
+    body.appendChild(hField);
+
+    /* ── 问题列表：挂在答案下 ── */
+    const qWrap = el('div', 'qa-q-list');
+    const qHead = el('div', 'qa-q-list-head');
+    qHead.appendChild(el('span', 'field-label', '问题 Q（支持 % 通配）'));
+    qHead.appendChild(el('span', 'field-hint', '这些问法都指向上面这条答案'));
+    qWrap.appendChild(qHead);
+
+    (group.questions || []).forEach((q, qi) => {
+      const row = el('div', 'qa-q-row');
+      row.appendChild(el('span', 'qa-q-row-index', 'Q' + (qi + 1)));
+
+      const qInput = el('input', 'input');
+      qInput.type = 'text';
+      qInput.value = q.text;
+      qInput.placeholder = '用户可能怎么问，例如 金锭怎么做';
+      qInput.addEventListener('input', () => {
+        q.text = qInput.value;
+        state.qaDirty = true;
+        updateDirty();
+      });
+      row.appendChild(qInput);
+
+      const qToggle = el('label', 'switch');
+      const qcb = el('input');
+      qcb.type = 'checkbox';
+      qcb.checked = q.enabled !== false;
+      qcb.title = '停用这条问题';
+      qcb.addEventListener('change', () => {
+        q.enabled = qcb.checked;
+        state.qaDirty = true;
+        updateDirty();
+      });
+      qToggle.appendChild(qcb);
+      qToggle.appendChild(el('span', 'switch-track'));
+      row.appendChild(qToggle);
+
+      const qDel = el('button', 'btn btn-ghost btn-sm', '移除');
+      qDel.type = 'button';
+      qDel.addEventListener('click', () => {
+        group.questions = group.questions.filter(x => x !== q);
+        state.qaDirty = true;
+        renderRows();
+        updateDirty();
+      });
+      row.appendChild(qDel);
+      qWrap.appendChild(row);
+    });
+
+    const addQ = el('button', 'btn btn-ghost btn-sm', '+ 加一个问法');
+    addQ.type = 'button';
+    addQ.addEventListener('click', () => {
+      group.questions = group.questions || [];
+      group.questions.push({ _id: nextId(), text: '', enabled: true });
+      state.qaDirty = true;
+      renderRows();
+      updateDirty();
+    });
+    qWrap.appendChild(addQ);
+    body.appendChild(qWrap);
+
+    card.appendChild(body);
+    return card;
   }
+
   function updateDirty() {
     const btn = $('#qa-save-btn');
     if (btn) btn.disabled = !state.qaDirty;
     const note = $('#qa-note');
     if (note) {
-      const n = state.qaDraft.length;
+      const n = (state.qaGroups || []).reduce((acc, g) => acc + (g.questions || []).length, 0);
       note.textContent = state.qaDirty
         ? '有未保存的改动（当前 ' + n + ' 条）'
         : '当前 ' + n + ' 条问答对，已与后端同步';
@@ -673,7 +744,12 @@
   function bind() {
     $('#qa-save-btn')?.addEventListener('click', () => save());
     $('#qa-add-row')?.addEventListener('click', () => {
-      state.qaDraft.push({ _id: nextId(), question: '', answerText: '', answerImages: '', enabled: true, _expand: true });
+      state.qaGroups = state.qaGroups || [];
+      state.qaGroups.push({
+        _id: nextId(), answerText: '', answerImages: '', hint: '',
+        questions: [{ _id: nextId(), text: '', enabled: true }],
+        enabled: true, answerKey: ''
+      });
       state.qaDirty = true;
       renderRows();
       updateDirty();

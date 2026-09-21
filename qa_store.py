@@ -72,10 +72,15 @@ def normalize_answer(raw: Any) -> Dict[str, Any]:
         images = raw.get("images") or []
         if isinstance(images, str):
             images = [images]
-        return {
+        answer = {
             "text": str(raw.get("text") or ""),
             "images": [str(x).strip() for x in images if str(x).strip()],
         }
+        # 答案级的 Jev 判定辅助说明：描述该答案适用的语境
+        hint = str(raw.get("hint") or "").strip()
+        if hint:
+            answer["hint"] = hint
+        return answer
     return {"text": "", "images": []}
 
 
@@ -97,7 +102,11 @@ def regroup_answers(table: "QATable", prefix: str = "a") -> None:
         if sig.strip("\u0000"):
             buckets[f"__sig__{sig}"].append(entry)
 
-    groups = {k: v for k, v in buckets.items() if len(v) > 1}
+    # 显式指定 answer_key 的分组一律保留（页面上「一 A 多 Q」可能就是单 Q）；
+    # 仅对未指定 key 的条目按答案指纹自动归组，且至少 2 条才值得建组。
+    explicit = {k: v for k, v in buckets.items() if not k.startswith("__sig__")}
+    inferred = {k: v for k, v in buckets.items() if k.startswith("__sig__") and len(v) > 1}
+    groups = {**explicit, **inferred}
     if not groups:
         return
 
@@ -113,7 +122,17 @@ def regroup_answers(table: "QATable", prefix: str = "a") -> None:
             counter += 1
         else:
             key = bucket_key
-        new_answers[key] = table.resolve_answer(members[0])
+        pooled = dict(table.resolve_answer(members[0]))
+        pooled.pop("hint", None)  # hint 归属见下：条目级优先，池级兜底
+        hint = str(members[0].get("hint") or "").strip()
+        if not hint:
+            for m in members:
+                hint = str(m.get("hint") or "").strip()
+                if hint:
+                    break
+        if hint:
+            pooled["hint"] = hint
+        new_answers[key] = pooled
         for entry in members:
             entry["answer_key"] = key
 
@@ -186,18 +205,20 @@ class QATable:
 
     # ── 答案解析（多 Q → 一 A 的核心）────────────────────
     def resolve_answer(self, entry: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        """解析某条目最终生效的答案。
+        """解析某条目最终生效的答案（含 hint 兜底）。
 
         优先使用 answer_key 指向的答案池条目；未设置或指向不存在时退回内联 answer。
+        hint 的优先级：条目级 > 答案池级。
         """
         if not entry:
             return {"text": "", "images": []}
         key = str(entry.get("answer_key") or "").strip()
-        if key:
-            pooled = self.answers.get(key)
-            if pooled is not None:
-                return pooled
-        return normalize_answer(entry.get("answer"))
+        pooled = self.answers.get(key) if key else None
+        answer = dict(pooled) if pooled is not None else normalize_answer(entry.get("answer"))
+        entry_hint = str(entry.get("hint") or "").strip()
+        if entry_hint:
+            answer["hint"] = entry_hint
+        return answer
 
     def answer_signature(self, entry: Optional[Dict[str, Any]]) -> str:
         """答案指纹，用于判断多条 Q 是否其实指向同一个 A。"""
@@ -453,7 +474,7 @@ class QAStore:
                     "question": str(entry.get("question") or ""),
                     "answer_text": str(answer.get("text") or ""),
                     "answer_images": list(answer.get("images") or []),
-                    "hint": str(entry.get("hint") or ""),
+                    "hint": str(answer.get("hint") or ""),
                     "entry": entry,
                     "scope": table.scope,
                     "scope_id": table.scope_id,
@@ -554,7 +575,8 @@ class QAStore:
                 },
                 "enabled": entry.get("enabled", True) is not False,
             }
-            hint = str(entry.get("hint") or "").strip()
+            # hint 与答案同源：优先条目级，其次答案池级
+            hint = str(resolved.get("hint") or "").strip()
             if hint:
                 item["hint"] = hint
             key = str(entry.get("answer_key") or "").strip()

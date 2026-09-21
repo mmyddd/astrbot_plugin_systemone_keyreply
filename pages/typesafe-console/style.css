@@ -548,6 +548,16 @@ html[data-theme="dark"] .btn-danger-solid:hover:not(:disabled) { background: #e1
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+.qa-item-hint {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 11px; font-weight: 600;
+  white-space: nowrap;
+}
+
 .qa-item-chevron { flex: none; width: 14px; height: 14px; color: var(--text-3); }
 .qa-item-chevron::before {
   content: ""; display: block; width: 6px; height: 6px; margin: 3px 0 0 2px;
@@ -666,6 +676,48 @@ html[data-theme="dark"] .btn-danger-solid:hover:not(:disabled) { background: #e1
   background: rgba(15, 21, 32, .72);
   color: #fff; font-size: 9.5px; line-height: 1.5; font-weight: 600;
 }
+
+
+/* ── 问答表：答案为中心的分组卡片 ───────────────────────── */
+.qa-group-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  margin-bottom: 14px;
+  background: var(--card);
+  overflow: hidden;
+}
+.qa-group-card.is-disabled { opacity: .55; }
+
+.qa-group-card-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: var(--card-sunken);
+  border-bottom: 1px solid var(--line);
+}
+.qa-group-card-index {
+  font-size: 12.5px; font-weight: 650; color: var(--text-2);
+}
+.qa-group-card-head .switch { margin-left: 4px; }
+
+.qa-group-card-body { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+
+/* 问题列表：视觉上从属于上面的答案 */
+.qa-q-list {
+  border-left: 2px solid var(--brand-soft);
+  padding-left: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.qa-q-list-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+
+.qa-q-row { display: flex; align-items: center; gap: 8px; }
+.qa-q-row-index {
+  flex: none; width: 26px;
+  font-size: 11.5px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.qa-q-row .input { flex: 1 1 auto; min-width: 0; }
+.qa-q-row .switch { flex: none; margin-left: 0; }
+.qa-q-row .btn { flex: none; }
 
 /* ── 响应式 ─────────────────────────────────────────────── */
 @media (max-width: 900px) {

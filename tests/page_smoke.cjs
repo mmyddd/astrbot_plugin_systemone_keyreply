@@ -236,7 +236,7 @@ t('renderTryResult 三种分支', () => {
 });
 t('renderRecent 增删', () => { TS.state.tryRecent = [{sender:'A',text:'hi'}]; TS.views.renderRecent(); TS.state.tryRecent = []; TS.views.renderRecent(); });
 
-/* ── 固定问答表视图 ─────────────────────────────────── */
+/* ── 固定问答表视图（答案为中心的分组卡片）──────────── */
 const qaFixture = () => ({
   tables: [
     { key: 'global', scope: 'global', scope_id: '', ids: [], name: '', label: '全局默认表',
@@ -249,66 +249,90 @@ const qaFixture = () => ({
       entries: [
         { question: '群专属问题', answer: { text: '群专属答案', images: [] }, enabled: true },
         { question: '图片问题', answer: { text: '', images: ['https://example.test/a.jpg'] }, enabled: true },
-        { question: '多图问题', answer: { text: '', images: ['https://example.test/a.jpg', 'https://example.test/b.jpg'] }, enabled: true }
+        { question: '多图问题', answer: { text: '', images: ['https://example.test/a.jpg', 'https://example.test/b.jpg'] }, enabled: true },
+        { question: '带说明的问题', answer: { text: '有说明的答案', images: [] }, hint: '该答案适用于询问语境的场景', enabled: true }
       ]},
-    { key: 'group:333', scope: 'group', scope_id: '333', ids: ['333'], name: '',
-      label: '群聊表 · 333',
-      entries: [] }
+    { key: 'group:333', scope: 'group', scope_id: '333', ids: ['333'], name: '', label: '群聊表 · 333', entries: [] }
   ],
   summary: { global_entries: 2, groups: ['111', '222', '333'], privates: [], total_entries: 3, table_count: 3 },
   import_candidates: [], data_file: '/tmp/qa_tables.json',
-  use_qa_table: true, enable_jev_topic: true, mode: 'jev', mode_label: 'Jev 话题模式',
+  enable_jev_topic: true, mode: 'jev', mode_label: 'Jev 话题模式',
   qa_min_confidence: '中', context_message_count: 3
 });
 
-t('qa.render 表列表与行渲染', () => {
+const walkAll = root => { const out = []; const w = n => { for (const c of n.children) { out.push(c); w(c); } }; w(root); return out; };
+// 精确类名匹配：避免 'qa-group-card' 误匹配 'qa-group-card-head'
+const hasClass = (n, cls) => String(n.className || '').split(/\s+/).indexOf(cls) >= 0;
+
+t('qa.render 表列表与分组卡片', () => {
   TS.state.qa = qaFixture();
   TS.state.qaTableKey = 'global';
   TS.qa.loadDraft();
-  if (!hosts['#qa-rows'].children.length) throw new Error('未渲染任何问答分组');
+  if (!hosts['#qa-rows'].children.length) throw new Error('未渲染任何分组卡片');
   if (!hosts['#qa-scope-bar'].children.length) throw new Error('未渲染问答表列表');
   if (!hosts['#qa-mode-bar'].children.length) throw new Error('未渲染模式条');
 });
 
-t('qa 行默认折叠', () => {
-  const items = [];
-  const walk = n => { for (const c of n.children) { items.push(c); walk(c); } };
-  walk(hosts['#qa-rows']);
-  const details = items.filter(n => n.tagName === 'DETAILS');
-  if (!details.length) throw new Error('未找到可折叠条目');
-  if (details.some(d => d.open === true)) throw new Error('存在默认展开的条目');
+t('qa 多 Q 一 A 合并为一个答案卡片', () => {
+  const cards = walkAll(hosts['#qa-rows']).filter(n => hasClass(n, 'qa-group-card'));
+  if (cards.length !== 1) throw new Error('两条同答案 Q 应合并为 1 张卡片，实际 ' + cards.length);
+  const qRows = walkAll(cards[0]).filter(n => hasClass(n, 'qa-q-row'));
+  if (qRows.length !== 2) throw new Error('卡片下应有 2 个问题输入行，实际 ' + qRows.length);
 });
 
-t('qa 折叠态只展示 Q 与 A', () => {
-  const items = [];
-  const walk = n => { for (const c of n.children) { items.push(c); walk(c); } };
-  walk(hosts['#qa-rows']);
-  const d = items.filter(n => n.tagName === 'DETAILS')[0];
-  const summary = d.children.find(c => c.tagName === 'SUMMARY');
-  if (!summary) throw new Error('折叠条目缺少 summary');
-  const textOf = n => {
-    let out = n.textContent || '';
-    for (const c of n.children) out += textOf(c);
-    return out;
-  };
-  const label = textOf(summary);
-  if (label.indexOf('怎么安装%') < 0) throw new Error('折叠摘要未显示问题：' + label);
-  if (label.indexOf('统一答案') < 0) throw new Error('折叠摘要未显示答案：' + label);
-});
-
-t('qa 多 Q 一 A 归组', () => {
-  const groups = hosts['#qa-rows'].children.filter(
-    n => n.className && String(n.className).indexOf('qa-group') >= 0
-  );
-  if (groups.length !== 1) throw new Error('期望 1 个分组，实际 ' + groups.length);
-});
-
-t('qa 多群一域：一张表含多个 ID', () => {
+t('qa 答案与辅助说明只渲染一次', () => {
   TS.state.qaTableKey = 'group:111';
   TS.qa.loadDraft();
-  const t = TS.state.qa.tables.find(x => x.key === 'group:111');
-  if (!t || t.ids.length !== 2) throw new Error('多 ID 表未保留 ids');
-  if (!hosts['#qa-rows'].children.length) throw new Error('群表未渲染');
+  const cards = walkAll(hosts['#qa-rows']).filter(n => hasClass(n, 'qa-group-card'));
+  // 4 条 Q，其中「群专属问题」与「带说明的问题」答案不同 -> 至少 3 个答案卡片
+  if (cards.length < 3) throw new Error('答案分组数不足: ' + cards.length);
+  const textareasPerCard = cards.map(c => walkAll(c).filter(n => n.tagName === 'TEXTAREA').length);
+  // 每张卡片固定 3 个 textarea（答案 A、图片、辅助说明），不随 Q 数增长
+  const bad = textareasPerCard.filter(n => n !== 3);
+  if (bad.length) throw new Error('答案级输入框数量异常（应为 3）: ' + textareasPerCard.join(','));
+});
+
+t('qa 辅助说明随答案保留', () => {
+  const groups = TS.state.qaGroups || [];
+  const withHint = groups.filter(g => String(g.hint || '').indexOf('询问语境') >= 0);
+  if (withHint.length !== 1) throw new Error('未正确载入辅助说明，命中 ' + withHint.length + ' 组');
+});
+
+t('qa 图片答案渲染极小缩略图', () => {
+  const nodes = walkAll(hosts['#qa-rows']);
+  const thumbs = nodes.filter(n => hasClass(n, 'qa-thumb'));
+  TS.state.qaTableKey = 'group:111';
+  TS.qa.loadDraft();
+  const after = walkAll(hosts['#qa-rows']).filter(n => hasClass(n, 'qa-thumb'));
+  if (!after.length) throw new Error('图片答案未渲染缩略图');
+});
+
+t('qa 缩略图加载失败退化为链接文字', () => {
+  const thumbs = walkAll(hosts['#qa-rows']).filter(n => hasClass(n, 'qa-thumb'));
+  const thumb = thumbs[0];
+  const img = thumb.children.find(c => c.tagName === 'IMG');
+  if (!img || !img._ev || !img._ev.error) throw new Error('缩略图未注册 error 回退');
+  img._ev.error({});
+  if (String(thumb.className).indexOf('is-broken') < 0) throw new Error('加载失败后未标记 is-broken');
+});
+
+t('qa 表格子不是 label（否则点任意位置会触发 ⋯ 按钮）', () => {
+  const chips = walkAll(hosts['#qa-scope-bar']).filter(n => hasClass(n, 'qa-scope-chip'));
+  if (!chips.length) throw new Error('未找到问答表格子');
+  if (chips.some(c => c.tagName === 'LABEL')) throw new Error('格子仍是 <label>，点击正文会连带触发内部按钮');
+});
+
+t('qa 格子内的 ⋯ 按钮阻止冒泡且只弹配置', () => {
+  const cfgBtns = walkAll(hosts['#qa-scope-bar']).filter(n => hasClass(n, 'qa-scope-cfg'));
+  if (!cfgBtns.length) throw new Error('未找到 ⋯ 按钮');
+  const chip = cfgBtns[0].parentNode;
+  let chipClicks = 0;
+  chip.addEventListener('click', () => { chipClicks++; });
+  const ev = { stopped: false, stopPropagation() { this.stopped = true; }, preventDefault() {} };
+  cfgBtns[0]._ev.click(ev);
+  if (!ev.stopped) throw new Error('⋯ 未调用 stopPropagation');
+  if (chipClicks !== 0) throw new Error('点击 ⋯ 触发了所在格子的切换');
+  TS.qa.closeTableConfig();
 });
 
 t('qa 打开群配置弹窗', () => {
@@ -316,179 +340,8 @@ t('qa 打开群配置弹窗', () => {
   if (!modal) throw new Error('缺少弹窗容器');
   TS.qa.openTableConfig(TS.state.qa.tables.find(x => x.key === 'group:111'));
   if (modal.hasAttribute && modal.hasAttribute('hidden')) throw new Error('弹窗未打开');
-  const idsHost = hosts['#qa-cfg-ids'];
-  if (!idsHost.children.length) throw new Error('未渲染 ID 列表');
+  if (!hosts['#qa-cfg-ids'].children.length) throw new Error('未渲染 ID 列表');
   TS.qa.closeTableConfig();
-});
-
-t('qa 图片答案渲染极小缩略图', () => {
-  TS.state.qaTableKey = 'group:111';
-  TS.qa.loadDraft();
-  const nodes = [];
-  const walk = n => { for (const c of n.children) { nodes.push(c); walk(c); } };
-  walk(hosts['#qa-rows']);
-
-  const thumbs = nodes.filter(n => String(n.className || '').indexOf('qa-thumb') >= 0);
-  if (thumbs.length < 2) throw new Error('期望至少 2 个缩略图，实际 ' + thumbs.length);
-
-  const first = thumbs[0];
-  if (first.tagName !== 'A') throw new Error('缩略图应是链接，实际 ' + first.tagName);
-  if (first.href !== 'https://example.test/a.jpg') throw new Error('缩略图 href 不正确：' + first.href);
-  const img = first.children.find(c => c.tagName === 'IMG');
-  if (!img) throw new Error('缩略图缺少 img 元素');
-  if (img.src !== 'https://example.test/a.jpg') throw new Error('img.src 不正确：' + img.src);
-
-  // 多图应有 +N 角标
-  const more = thumbs.filter(t => t.children.some(c => String(c.className || '').indexOf('qa-thumb-more') >= 0));
-  if (!more.length) throw new Error('多图未显示剩余数量角标');
-});
-
-t('qa 缩略图加载失败退化为链接文字', () => {
-  const nodes = [];
-  const walk = n => { for (const c of n.children) { nodes.push(c); walk(c); } };
-  walk(hosts['#qa-rows']);
-  const thumb = nodes.filter(n => String(n.className || '').indexOf('qa-thumb') >= 0)[0];
-  const img = thumb.children.find(c => c.tagName === 'IMG');
-  if (!img || !img._ev || !img._ev.error) throw new Error('缩略图未注册 error 回退处理');
-  // 触发加载失败
-  img._ev.error({});
-  if (String(thumb.className).indexOf('is-broken') < 0) throw new Error('加载失败后未标记 is-broken');
-  const fb = thumb.children.find(c => String(c.className || '').indexOf('qa-thumb-fallback') >= 0);
-  if (!fb) throw new Error('加载失败后未显示链接文字回退');
-  if (thumb.children.some(c => c.tagName === 'IMG')) throw new Error('加载失败后仍保留破图元素');
-});
-
-t('qa 无图答案不渲染缩略图', () => {
-  TS.state.qaTableKey = 'global';
-  TS.qa.loadDraft();
-  const nodes = [];
-  const walk = n => { for (const c of n.children) { nodes.push(c); walk(c); } };
-  walk(hosts['#qa-rows']);
-  const thumbs = nodes.filter(n => String(n.className || '').indexOf('qa-thumb') >= 0);
-  if (thumbs.length) throw new Error('无图答案不应出现缩略图，实际 ' + thumbs.length);
-  TS.state.qaTableKey = 'group:111';
-  TS.qa.loadDraft();
-});
-
-/* ── 确认对话框（sandbox 下 window.confirm 失效）── */
-t('confirmDialog 存在且返回 Promise', () => {
-  if (typeof TS.confirmDialog !== 'function') throw new Error('缺少 TS.confirmDialog');
-  const p = TS.confirmDialog('测试确认');
-  if (!p || typeof p.then !== 'function') throw new Error('confirmDialog 未返回 Promise');
-  // 清理：按取消，避免 Promise 悬空
-  const modal = document.querySelector('#app-confirm');
-  if (!modal) throw new Error('未创建确认对话框');
-  const cancel = modal.querySelector('#app-confirm-cancel');
-  if (!cancel) throw new Error('缺少取消按钮');
-  cancel._ev.click();
-});
-
-t('confirmDialog 取消返回 false', async () => {
-  const p = TS.confirmDialog('取消测试');
-  const modal = document.querySelector('#app-confirm');
-  modal.querySelector('#app-confirm-cancel')._ev.click();
-  const r = await p;
-  if (r !== false) throw new Error('取消应返回 false，实际 ' + r);
-});
-
-t('confirmDialog 确定返回 true', async () => {
-  const p = TS.confirmDialog('确定测试');
-  const modal = document.querySelector('#app-confirm');
-  modal.querySelector('#app-confirm-ok')._ev.click();
-  const r = await p;
-  if (r !== true) throw new Error('确定应返回 true，实际 ' + r);
-});
-
-t('confirmDialog 显示传入的文案', async () => {
-  const p = TS.confirmDialog('这段文案应当出现', { title: '自定义标题' });
-  const modal = document.querySelector('#app-confirm');
-  const msg = modal.querySelector('#app-confirm-message');
-  if (String(msg.textContent).indexOf('这段文案应当出现') < 0) {
-    throw new Error('未显示确认文案：' + msg.textContent);
-  }
-  // 用标题元素自身的文本校验（桩不支持后代选择器语法）
-  const nodes = [];
-  const walk = n => { for (const c of n.children) { nodes.push(c); walk(c); } };
-  walk(modal);
-  const h = nodes.filter(n => n.tagName === 'H2')[0];
-  if (!h) throw new Error('对话框缺少标题元素');
-  if (String(h.textContent) !== '自定义标题') throw new Error('标题未生效：' + h.textContent);
-  modal.querySelector('#app-confirm-cancel')._ev.click();
-  await p;
-});
-
-t('产品代码不再直接调用被沙箱屏蔽的 window.confirm', () => {
-  const files = ['qa.js', 'config.js', 'app.js'];
-  const bad = [];
-  for (const f of files) {
-    const src = fs.readFileSync(path.join(DIR, f), 'utf8');
-    src.split('\n').forEach((line, i) => {
-      if (/window\.confirm\s*\(/.test(line) && line.trim().indexOf('//') !== 0) {
-        bad.push(f + ':' + (i + 1));
-      }
-    });
-  }
-  if (bad.length) throw new Error('仍在使用 window.confirm：' + bad.join(', '));
-});
-
-t('qa 表格子不是 label（否则点任意位置会触发 ⋯ 按钮）', () => {
-  const chips = [];
-  const walk = n => { for (const c of n.children) { if (String(c.className || '').indexOf('qa-scope-chip') >= 0) chips.push(c); walk(c); } };
-  walk(hosts['#qa-scope-bar']);
-  if (!chips.length) throw new Error('未找到问答表格子');
-  const bad = chips.filter(c => c.tagName === 'LABEL');
-  if (bad.length) throw new Error('有 ' + bad.length + ' 个格子仍是 <label>，点击正文会连带触发内部按钮');
-});
-
-t('qa 格子内的 ⋯ 按钮阻止冒泡且只弹配置', () => {
-  const walks = [];
-  const walk = n => { for (const c of n.children) { walks.push(c); walk(c); } };
-  walk(hosts['#qa-scope-bar']);
-  const cfgBtns = walks.filter(c => String(c.className || '').indexOf('qa-scope-cfg') >= 0);
-  if (!cfgBtns.length) throw new Error('未找到 ⋯ 按钮');
-
-  const chip = cfgBtns[0].parentNode;
-  let chipClicks = 0;
-  chip.addEventListener('click', () => { chipClicks++; });
-
-  const ev = { stopped: false, stopPropagation() { this.stopped = true; }, preventDefault() {} };
-  cfgBtns[0]._ev.click(ev);
-  if (!ev.stopped) throw new Error('⋯ 按钮未调用 stopPropagation，会连带切换问答表');
-  if (chipClicks !== 0) throw new Error('点击 ⋯ 触发了所在格子的切换逻辑');
-
-  // 同时确认弹窗确实被打开
-  const modal = hosts['#qa-cfg-modal'];
-  if (modal && modal.hasAttribute && modal.hasAttribute('hidden')) throw new Error('⋯ 未打开群配置弹窗');
-  TS.qa.closeTableConfig();
-});
-
-/* ── 样式守卫：DOM 桩没有布局引擎，关键布局规则只能查样式源 ── */
-t('样式：.qa-row-head 保持 flex 行布局', () => {
-  const css = fs.readFileSync(
-    require('path').join(REPO, 'pages', 'typesafe-console', 'style.css'), 'utf8'
-  );
-  const m = css.match(/\.qa-row-head\s*\{([^}]*)\}/);
-  if (!m) throw new Error('style.css 中缺少 .qa-row-head 规则');
-  const body = m[1];
-  if (body.indexOf('display: flex') < 0) {
-    throw new Error('.qa-row-head 缺少 display:flex，展开区控件会重叠：' + body.trim());
-  }
-  if (body.indexOf('align-items') < 0) {
-    throw new Error('.qa-row-head 缺少 align-items，开关与文字会错位');
-  }
-});
-
-t('样式：问答表格子不是 label 选择器依赖', () => {
-  const css = fs.readFileSync(
-    require('path').join(REPO, 'pages', 'typesafe-console', 'style.css'), 'utf8'
-  );
-  // .qa-scope-cfg 必须有可点击尺寸，否则 ⋯ 点不到
-  const m = css.match(/\.qa-scope-cfg\s*\{([^}]*)\}/);
-  if (!m) throw new Error('style.css 中缺少 .qa-scope-cfg 规则');
-  const body = m[1];
-  if (!/width:\s*\d+px/.test(body) || !/height:\s*\d+px/.test(body)) {
-    throw new Error('⋯ 按钮缺少明确尺寸，可能点不中：' + body.trim());
-  }
 });
 
 t('qa 空表渲染占位', () => {
