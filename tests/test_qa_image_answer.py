@@ -64,9 +64,10 @@ async def run():
     check("序列化不再丢失 answer_key", all(e.get("answer_key") for e in tbl["entries"]),
           [e.get("answer_key") for e in tbl["entries"]])
 
-    # 2. 经典模式：纯图片答案必须发出，而不是被判定为空
+    # 2. 纯图片答案必须发出，而不是被判定为空
+    cands = p.qa_store.recall_candidates("原神", "group", "111")
     out = []
-    async for r in p._handle_qa_classic(EV, "原神", "111", "group", "111"):
+    async for r in p._qa_send_answer(EV, "原神", "111", cands[0], [], llm_mode=False):
         out.append(r)
     check("纯图片答案不被当作空答案", len(out) == 1, len(out))
     if out:
@@ -96,8 +97,9 @@ async def run():
     p2.classifier.client_wrapper.api_key = "ts_x_123456789"
     p2.typesafe_client.api_key = "ts_x_123456789"
 
+    cands2 = p2.qa_store.recall_candidates("原神", "group", "111")
     out2 = []
-    async for r in p2._handle_qa_jev(EV, "原神", "111", "group", "111", []):
+    async for r in p2._qa_send_answer(EV, "原神", "111", cands2[0], [], llm_mode=True):
         out2.append(r)
     check("纯图片答案在 Jev 模式下也发出", len(out2) == 1, len(out2))
     check("纯图片答案不调用 LLM", calls["llm"] == 0, calls["llm"])
@@ -116,9 +118,11 @@ async def run():
     p3.qa_store.path = ROOT / "qa3.json"; p3.qa_store.tables = {}
     p3.qa_store.replace_table(SCOPE_GROUP, "111", [
         {"question": "空答案", "answer": {"text": "", "images": []}, "enabled": True}])
+    cands3 = p3.qa_store.recall_candidates("空答案", "group", "111")
     out3 = []
-    async for r in p3._handle_qa_classic(EV, "空答案", "111", "group", "111"):
-        out3.append(r)
+    if cands3:
+        async for r in p3._qa_send_answer(EV, "空答案", "111", cands3[0], [], llm_mode=False):
+            out3.append(r)
     check("真正空答案仍静默", out3 == [], out3)
 
 asyncio.run(run())

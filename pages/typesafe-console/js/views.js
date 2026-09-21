@@ -63,21 +63,17 @@
     ].join(' '));
     add('判定模型', esc(s.model || '—') + (s.custom_model ? ' <span class="field-meta">(自定义)</span>' : ''));
     add('失败处理策略', pill(FAILURE_LABEL[s.failure_mode] || s.failure_mode || '—', s.failure_mode === 'silent' ? 'mute' : 'brand'));
-    add('回复来源', s.use_qa_table
-      ? pill(s.qa_mode_label || '固定问答表', 'brand')
-        + (s.qa_mode === 'jev' ? ' <span class="field-meta">Jev 审核 + LLM 围绕答案回复</span>' : ' <span class="field-meta">正则命中直接发送答案</span>')
-      : pill('大模型自由回复', 'mute'));
-    if (s.use_qa_table && s.qa_summary) {
+    add('回复来源', pill(s.qa_mode_label || '固定问答表', 'brand')
+      + (s.qa_mode === 'jev'
+        ? ' <span class="field-meta">正则召回 → Jev 判定真提问 → 回复答案</span>'
+        : ' <span class="field-meta">正则命中直接发送答案</span>'));
+    add('相关性判定门槛', pill(CONFIDENCE_LABEL[s.qa_min_confidence] || s.qa_min_confidence || '—', 'brand')
+      + ' <span class="field-meta">Jev 判定低于该等级将保持静默</span>');
+    if (s.qa_summary) {
       add('问答表规模', '全局 ' + format.num(s.qa_summary.global_entries) + ' 条 · 群表 '
         + format.num((s.qa_summary.groups || []).length) + ' 个 · 私聊表 '
         + format.num((s.qa_summary.privates || []).length) + ' 个');
     }
-    add('置信度门槛', pill(CONFIDENCE_LABEL[s.min_confidence] || s.min_confidence || '—', 'brand')
-      + ' <span class="field-meta">判定低于该等级将保持静默</span>');
-    add('回复概率', format.percent(s.reply_probability));
-    add('活跃意图类型', (s.allowed_reply_types || []).length
-      ? (s.allowed_reply_types || []).map(t => pill(t, 'brand')).join(' ')
-      : pill('全部关闭', 'warn'));
     add('回复风格 / 篇幅', esc(s.reply_style || '—') + ' · ' + esc(s.reply_length_mode || '—')
       + ' <span class="field-meta">上限 ' + format.num(s.max_chars) + ' 字</span>');
     add('回复模型', esc(s.model_mode === 'custom' ? '指定 Provider: ' + (s.custom_provider_id || '未填写') : '跟随当前会话模型'));

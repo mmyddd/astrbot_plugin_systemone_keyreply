@@ -195,10 +195,11 @@ t('脏字段可被 collect 收集', () => {
   if (!('enable_plugin' in patch)) throw new Error('enable_plugin 未收集');
   if (!('max_chars' in patch)) throw new Error('max_chars 未收集');
 });
-t('多选控件 collect 返回数组', () => {
-  TS.state.dirty.clear(); TS.state.dirty.add('allowed_reply_types');
-  const patch = TS.config.collect();
-  if (!Array.isArray(patch.allowed_reply_types)) throw new Error('不是数组: ' + typeof patch.allowed_reply_types);
+t('渲染覆盖全部 schema 字段控件', () => {
+  TS.config.render();
+  const rendered = document.querySelectorAll('[data-field]').length;
+  const expected = Object.keys(schema).length;
+  if (rendered < expected) throw new Error('渲染字段数不足: ' + rendered + '/' + expected);
 });
 t('列表控件 collect 按行拆分', () => {
   // 用一个仍然存在的列表字段作为样本（关键词过滤字段已随「消息过滤与触发」移除）

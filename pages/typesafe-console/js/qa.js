@@ -339,18 +339,12 @@
     if (!host) return;
     const d = state.qa || {};
     host.textContent = '';
-    host.appendChild(el('span', 'field-label', '当前回复模式：'));
-    host.appendChild(el('span', 'pill ' + (d.use_qa_table ? 'pill-ok' : 'pill-mute'),
-      d.use_qa_table ? (d.mode_label || '固定问答表') : '大模型自由回复'));
-    if (d.use_qa_table) {
-      host.appendChild(el('span', 'pill ' + (d.enable_jev_topic ? 'pill-brand' : 'pill-warn'),
-        d.enable_jev_topic ? 'Jev 审核已开启' : 'Jev 关闭（KeyReply 原样）'));
-      host.appendChild(el('span', 'field-meta', '最低置信度 ' + (d.qa_min_confidence || '中')
-        + ' · 上下文 ' + format.num(d.context_message_count) + ' 条'));
-    } else {
-      const tip = el('span', 'field-meta', '问答表暂不生效，可在「配置中心 → 固定问答表」切换回复来源。');
-      host.appendChild(tip);
-    }
+    host.appendChild(el('span', 'field-label', '当前流程：'));
+    host.appendChild(el('span', 'pill pill-ok', '固定问答表'));
+    host.appendChild(el('span', 'pill ' + (d.enable_jev_topic ? 'pill-brand' : 'pill-warn'),
+      d.enable_jev_topic ? 'Jev 相关性判定已开启' : 'Jev 关闭（正则命中即回复）'));
+    host.appendChild(el('span', 'field-meta', '最低置信度 ' + (d.qa_min_confidence || '中')
+      + ' · 上下文 ' + format.num(d.context_message_count) + ' 条'));
   }
 
   /* ── 群配置弹窗（多群一域）────────────────────────────── */

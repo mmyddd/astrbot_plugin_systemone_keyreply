@@ -57,46 +57,6 @@
     ],
     "default": "静默，不回复"
   },
-  "min_confidence": {
-    "description": "最低判断置信度",
-    "type": "string",
-    "hint": "TypeSafe 判定需要回复时的最低置信度阈值要求",
-    "options": [
-      "高",
-      "中",
-      "低"
-    ],
-    "default": "中"
-  },
-  "allowed_reply_types": {
-    "description": "允许自动回复的类型",
-    "type": "list",
-    "hint": "选择允许机器人主动介入的消息意图类型（常见推荐开启：明确提问、求助、讨论、技术问题、信息查询、建议请求）",
-    "options": [
-      "明确提问",
-      "求助",
-      "讨论",
-      "技术问题",
-      "信息查询",
-      "建议请求",
-      "闲聊",
-      "情绪表达",
-      "玩笑",
-      "陈述",
-      "打招呼",
-      "感谢",
-      "告别",
-      "其他"
-    ],
-    "default": [
-      "明确提问",
-      "求助",
-      "讨论",
-      "技术问题",
-      "信息查询",
-      "建议请求"
-    ]
-  },
   "model_mode": {
     "description": "回复模型选择模式",
     "type": "string",
@@ -106,16 +66,6 @@
       "指定已配置 Provider"
     ],
     "default": "跟随当前会话模型"
-  },
-  "reply_source": {
-    "description": "回复来源",
-    "type": "string",
-    "hint": "固定问答表 = 回复只来自 QA 表；大模型 = 维持原有 LLM 自由生成",
-    "options": [
-      "固定问答表 (KeyReply)",
-      "大模型自由回复"
-    ],
-    "default": "大模型自由回复"
   },
   "enable_jev_topic": {
     "description": "启用 Jev 话题判断",
@@ -133,12 +83,6 @@
       "低"
     ],
     "default": "中"
-  },
-  "qa_fallback_to_llm": {
-    "description": "QA 未命中时回退大模型",
-    "type": "bool",
-    "default": false,
-    "hint": "关闭（推荐，等同 KeyReply 行为）= 未命中 QA 就保持静默；开启 = 未命中时改用 LLM 自由回复"
   },
   "custom_provider_id": {
     "description": "指定 AstrBot Provider ID",
@@ -251,12 +195,6 @@
     "type": "int",
     "hint": "连续主动介入达到此轮数后暂停主动发言，直至被 @ 或其他用户交流",
     "default": 2
-  },
-  "reply_probability": {
-    "description": "回复参与概率 (%)",
-    "type": "int",
-    "hint": "TypeSafe 判定需要回复后，最终决定参与的百分比概率 (1-100)",
-    "default": 100
   },
   "filter_mode": {
     "description": "黑白名单模式",

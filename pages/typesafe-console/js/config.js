@@ -37,11 +37,9 @@
         { key: 'typesafe_custom_model', type: 'text', label: 'TypeSafe 自定义模型名称', desc: '当判定模型选择「自定义模型」时生效。', hint: '例如 jev-1.13.0', dependsOn: { key: 'typesafe_model', value: '自定义模型' } },
         { key: 'typesafe_timeout', type: 'int', label: 'TypeSafe API 超时时间 (秒)', desc: '单次裁决请求的超时时间，超时按失败处理策略降级。', min: 1, max: 120 },
         { key: 'failure_mode', type: 'select', label: 'TypeSafe 失败处理策略', options: ['静默，不回复', '基础规则判断 (问号回复)', '直通 AstrBot'], desc: '超时、限流或网络异常时的降级方式。' },
-        { key: 'min_confidence', type: 'select', label: '最低判断置信度', options: ['高', '中', '低'], desc: 'TypeSafe 判定需要回复时的最低置信度阈值。' },
         { key: 'rate_limit_per_minute', type: 'int', label: 'TypeSafe 每分钟最大请求数', desc: '本地滑动窗口限流，防止超出服务端额度。', min: 1, max: 600 },
         { key: 'enable_cache', type: 'bool', label: '启用 TypeSafe 判断缓存', desc: '相同消息在缓存有效期内复用判定结果，减少请求。' },
         { key: 'cache_ttl', type: 'int', label: '缓存有效期 (秒)', desc: '判定结果的复用时长。', min: 1, max: 3600 },
-        { key: 'allowed_reply_types', type: 'multiselect', label: '允许自动回复的类型', wide: true, desc: '只有判定为这些意图的消息才会触发主动回复。', options: ['明确提问', '求助', '讨论', '技术问题', '信息查询', '建议请求', '闲聊', '情绪表达', '玩笑', '陈述', '打招呼', '感谢', '告别', '其他'] }
       ]
     },
     {
@@ -62,10 +60,8 @@
       title: '固定问答表（KeyReply）',
       desc: '回复来源选择「固定问答表」时生效：先由本地正则召回，命中才触发 Jev 审核与 LLM 生成；未命中一律静默。',
       fields: [
-        { key: 'reply_source', type: 'select', label: '回复来源', options: ['大模型自由回复', '固定问答表 (KeyReply)'], wide: true, desc: '大模型自由回复 = 维持原有两阶段 LLM 流程；固定问答表 = 由 QA 表驱动回复。' },
-        { key: 'enable_jev_topic', type: 'bool', label: '启用 Jev 话题判断', desc: '开启 = 正则召回后交给 Jev 确认话题，再由 LLM 围绕该条答案生成；关闭 = 回退 KeyReply 原样，正则命中直接发送固定答案。' },
-        { key: 'qa_min_confidence', type: 'select', label: '话题命中最低置信度', options: ['高', '中', '低'], desc: 'Jev 确认话题的置信度低于该等级时视为未命中，保持静默。' },
-        { key: 'qa_fallback_to_llm', type: 'bool', label: 'QA 未命中时回退大模型', desc: '关闭（等同 KeyReply 行为）= 未命中就静默；开启 = 未命中改用 LLM 自由回复。' },
+        { key: 'enable_jev_topic', type: 'bool', wide: true, label: '启用 Jev 相关性判定', desc: '开启 = 正则召回命中 Q 后，把 Q 与 A 一起交给 Jev 判断是否真提问，确认后才回复；关闭 = 回退 KeyReply 原样，正则命中直接发送固定答案。' },
+        { key: 'qa_min_confidence', type: 'select', label: '相关性判定最低置信度', options: ['高', '中', '低'], desc: 'Jev 判定为真提问的置信度低于该等级时视为未命中，保持静默。' },
       ]
     },
     {
@@ -88,7 +84,6 @@
         { key: 'session_cooldown', type: 'int', label: '同一会话回复冷却 (秒)', desc: '主动回复后，同会话普通消息在此时间内不再触发。', min: 0, max: 3600 },
         { key: 'user_cooldown', type: 'int', label: '同一用户主动回复冷却 (秒)', desc: '同一用户在此时间内不会再次主动触发机器人。', min: 0, max: 3600 },
         { key: 'max_continuous_replies', type: 'int', label: '最大连续主动回复次数', desc: '连续介入达到该轮数后暂停主动发言，直到被 @ 或其他用户交流。', min: 0, max: 20 },
-        { key: 'reply_probability', type: 'int', label: '回复参与概率 (%)', desc: '判定通过后最终参与回复的百分比概率。', min: 1, max: 100 }
       ]
     },
     {

@@ -58,9 +58,14 @@ class ClassificationDecision:
 
 @dataclass
 class TopicMatch:
-    """Jev 话题匹配结果：判断消息是否属于某个已知话题（QA 表中的 question）。"""
+    """Jev 相关性判定结果：消息是否真的需要这条固定答案。
 
-    matched: bool
+    与「话题分类」不同，这里做的是**二分类**——分辨真提问与假命中：
+    - 真提问：消息确实在问这件事，应当给出该答案
+    - 假命中：消息只是字面上包含 Q 的文字，话题其实无关
+    """
+
+    matched: bool                      # True = 真提问，应当回复
     question: str                      # 命中的原始问题文本（未命中为空）
     index: int                         # 命中项在候选列表中的下标，-1 表示未命中
     confidence_score: float
@@ -277,72 +282,80 @@ class MessageClassifier:
 
     MAX_TOPIC_CANDIDATES = 40
 
-    def build_topic_question(self, questions: List[str]) -> Optional[Choice]:
-        """以 QA 表的问题文本作为 criteria，构造「话题判断关键词」Choice。
+    def build_relevance_question(self, candidates: List[Dict[str, Any]]) -> Optional[Choice]:
+        """构造「这条消息是否真的需要该回答」的二分类问题。
 
-        Choice 的 criteria 键为候选键名（q0/q1/...），值即该条问题的原文，
-        因此 Jev 实际收到的就是「这些话题关键词」，命中的键名可反查回原问题。
+        criteria 里逐条给出候选的 Q、A 与附加判定增强——Jev 必须同时看到
+        问题与答案，才能判断消息是在真的提问，还是只是碰巧包含了 Q 的文字。
         """
-        candidates = [str(q).strip() for q in (questions or []) if str(q).strip()]
-        if not candidates:
+        usable = [c for c in (candidates or []) if str(c.get("question") or "").strip()]
+        if not usable:
             return None
-        # 去重保序，并限制候选数量，避免超出插件单请求的 255 项约束
-        seen: set = set()
-        unique: List[str] = []
-        for q in candidates:
-            if q in seen:
-                continue
-            seen.add(q)
-            unique.append(q)
-        unique = unique[: self.MAX_TOPIC_CANDIDATES]
+        usable = usable[: self.MAX_TOPIC_CANDIDATES]
 
         criteria: Dict[str, str] = {}
-        for idx, text in enumerate(unique):
-            criteria[f"q{idx}"] = text
-        criteria["none"] = "以上话题都不匹配（消息与这些话题无关）"
+        for idx, cand in enumerate(usable):
+            q = str(cand.get("question") or "").strip()
+            a = str(cand.get("answer_text") or "").strip()
+            hint = str(cand.get("hint") or "").strip()
+            parts = [f"问题关键词：{q}"]
+            if a:
+                parts.append(f"对应回答：{a}")
+            if hint:
+                parts.append(f"补充说明：{hint}")
+            criteria[f"relevant{idx}"] = "【应当回答】" + " ｜ ".join(parts)
+        criteria["irrelevant"] = (
+            "【不应当回答】当前消息并不需要上面任何一个回答"
+            "（例如只是字面上包含了关键词，但话题无关；或是与这些话题毫无关系的闲聊）"
+        )
 
         return Choice(
             instructions=(
-                "你负责判断群聊中的当前消息是否属于下列已知话题之一。\n"
-                "下列每一项都是一个「话题判断关键词」，代表机器人已经准备好固定答案的话题。\n"
-                "判断规则：\n"
-                "- 只要消息在语义上询问或讨论其中某个话题，就选中对应的那一项；\n"
-                "- 允许口语化、错别字、同义改写与省略（例如「咋装」「怎么弄」都算询问安装类话题）；\n"
-                "- 模糊匹配符 % 代表任意内容，命中它两侧的文字即可；\n"
-                "- 若消息与所有话题都无关，选择 none。\n"
-                "宁可选择 none，也不要把无关消息硬套到某个话题上。"
+                "你在判断群聊中的这条消息**是否真的需要**某个已经准备好的固定回答。\n"
+                "下面每一项都给出了一个问题关键词、它对应的回答，以及必要的补充说明。\n"
+                "判断标准：\n"
+                "- 如果用户确实在询问或求助这个回答所覆盖的内容，选择对应的「应当回答」项；\n"
+                "- 如果消息只是字面上包含了某个关键词，但实际话题与该回答无关，选择「不应当回答」；\n"
+                "- 如果消息与所有条目都无关，同样选择「不应当回答」。\n"
+                "请特别注意补充说明中对适用语境的描述，它用于区分容易混淆的情况。\n"
+                "宁可选择「不应当回答」，也不要在语境不符时硬套一个答案。"
             ),
             criteria=criteria,
         )
 
-    async def match_topic(
+    async def match_relevance(
         self,
         state: dict,
-        questions: List[str],
+        candidates: List[Dict[str, Any]],
         cache_key_text: Optional[str] = None,
     ) -> TopicMatch:
-        """调用 Jev 判断消息属于哪个已知话题。"""
-        candidates = [str(q).strip() for q in (questions or []) if str(q).strip()]
-        if not candidates:
+        """调用 Jev 做二分类：这条消息是否真的需要某个固定回答。
+
+        candidates 由 QAStore.recall_candidates 提供，每条含 question / answer_text / hint。
+        失败时一律判为「不相关」，宁可静默也不猜测性回复。
+        """
+        usable = [c for c in (candidates or []) if str(c.get("question") or "").strip()]
+        names = [str(c.get("question") or "") for c in usable]
+        if not usable:
             return TopicMatch(
                 matched=False, question="", index=-1,
                 confidence_score=0.0, confidence_level="low",
-                reason="问答表为空，无法进行话题匹配",
+                reason="没有候选，无需判定",
                 candidates=[],
             )
 
-        question = self.build_topic_question(candidates)
+        question = self.build_relevance_question(usable)
         if question is None:
             return TopicMatch(
                 matched=False, question="", index=-1,
                 confidence_score=0.0, confidence_level="low",
-                reason="话题候选为空",
-                candidates=candidates,
+                reason="候选为空，无法构造判定问题",
+                candidates=names,
             )
 
         api_result = await self.client_wrapper.call_system_one(
             state=state,
-            questions={"topic": question},
+            questions={"relevance": question},
             cache_key_text=cache_key_text,
         )
 
@@ -352,58 +365,59 @@ class MessageClassifier:
             )
             failure_mode = normalize_failure_mode(raw_failure_mode)
             error_reason = api_result.get("error_reason", "unknown") if api_result else "no_result"
-            # 话题匹配失败时一律不匹配：宁可静默，也不猜测性地回复错误答案
             return TopicMatch(
                 matched=False, question="", index=-1,
                 confidence_score=0.0, confidence_level="low",
-                reason=f"TypeSafe 话题判断失败({failure_mode}): {error_reason}",
+                reason=f"Jev 相关性判定失败({failure_mode}): {error_reason}",
                 is_fallback=True,
-                candidates=candidates,
+                candidates=names,
             )
 
         raw_choices = api_result.get("raw_choices", {})
-        topic_choice = raw_choices.get("topic")
-        if not topic_choice or not getattr(topic_choice, "choice", None):
+        rel_choice = raw_choices.get("relevance")
+        if not rel_choice or not getattr(rel_choice, "choice", None):
             return TopicMatch(
                 matched=False, question="", index=-1,
                 confidence_score=0.5, confidence_level="medium",
-                reason="TypeSafe 未返回话题选择结果",
-                candidates=candidates,
+                reason="Jev 未返回相关性判定结果",
+                candidates=names,
             )
 
-        key = str(topic_choice.choice)
+        key = str(rel_choice.choice)
         try:
-            score = float(topic_choice.confidence)
+            score = float(rel_choice.confidence)
         except (ValueError, TypeError):
             score = 0.5
         level = self.map_confidence_level(score)
 
-        if key == "none" or not key.startswith("q"):
+        # 判为「不应当回答」——假命中或无关内容
+        if not key.startswith("relevant"):
             return TopicMatch(
                 matched=False, question="", index=-1,
                 confidence_score=score, confidence_level=level,
-                reason=f"TypeSafe 判定不属于任何已知话题 (confidence={score:.2f})",
-                candidates=candidates,
+                reason=f"Jev 判定为假命中/无关内容，不回复 (confidence={score:.2f})",
+                candidates=names,
             )
 
         try:
-            idx = int(key[1:])
+            idx = int(key[len("relevant"):])
         except ValueError:
             idx = -1
-        if idx < 0 or idx >= len(candidates):
+        if idx < 0 or idx >= len(usable):
             return TopicMatch(
                 matched=False, question="", index=-1,
                 confidence_score=score, confidence_level=level,
-                reason=f"TypeSafe 返回了越界的话题下标: {key}",
-                candidates=candidates,
+                reason=f"Jev 返回了越界的候选下标: {key}",
+                candidates=names,
             )
 
+        chosen = usable[idx]
         return TopicMatch(
             matched=True,
-            question=candidates[idx],
+            question=str(chosen.get("question") or ""),
             index=idx,
             confidence_score=score,
             confidence_level=level,
-            reason=f"TypeSafe 判定命中话题「{candidates[idx]}」(confidence={score:.2f})",
-            candidates=candidates,
+            reason=f"Jev 判定确实在询问「{chosen.get('question')}」(confidence={score:.2f})",
+            candidates=names,
         )

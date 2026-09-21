@@ -19,7 +19,7 @@ from qa_store import SCOPE_GLOBAL, SCOPE_GROUP
 results = []
 def check(n, c, extra=""): results.append((n, bool(c), str(extra)[:120]))
 
-cfg = {"reply_source": "固定问答表 (KeyReply)", "enable_jev_topic": True,
+cfg = {"enable_jev_topic": True,
        "typesafe_api_key": "ts_key_1234567890", "qa_min_confidence": "中"}
 ctx = type("C", (), {"register_web_api": lambda *a, **k: None})()
 p = M.TypeSafeAutoReplyPlugin(ctx, cfg)
@@ -35,8 +35,8 @@ async def run():
     quart._Req._payload = {
         "scope": "global", "scope_id": "",
         "entries": [
-            {"question": "怎么安装%", "answer": {"text": "统一答案", "images": []}, "enabled": True},
-            {"question": "%如何安装%", "answer": {"text": "统一答案", "images": []}, "enabled": True},
+            {"question": "%安装%", "answer": {"text": "统一答案", "images": []}, "enabled": True},
+            {"question": "%插件%", "answer": {"text": "统一答案", "images": []}, "enabled": True},
             {"question": "禁用的", "answer": {"text": "x", "images": []}, "enabled": False},
         ],
     }
@@ -73,7 +73,7 @@ async def run():
     quart._Req._payload = {"text": "怎么安装插件", "scope": "global", "scope_id": ""}
     t = await p._api_qa_test()
     check("qa/test 返回 would_reply", "would_reply" in t, list(t.keys())[:6])
-    check("qa/test 经典召回命中", bool(t.get("classic")), t.get("classic"))
+    check("qa/test 报告召回条目", len(t.get("recalled") or []) >= 2, len(t.get("recalled") or []))
     check("qa/test 报告候选数", t.get("candidate_count", 0) >= 2, t.get("candidate_count"))
 
 asyncio.run(run())

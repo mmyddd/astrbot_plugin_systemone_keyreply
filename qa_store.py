@@ -135,6 +135,10 @@ def normalize_entry(raw: Any) -> Optional[Dict[str, Any]]:
         "answer": answer,
         "enabled": bool(raw.get("enabled", True)),
     }
+    # 附加判定增强：随 Q/A 一起喂给 Jev，帮助它分辨「真提问」与「假命中」
+    hint = str(raw.get("hint") or "").strip()
+    if hint:
+        entry["hint"] = hint
     # 仅在有分组时写出 answer_key，保持与旧数据的存储形态一致
     if answer_key:
         entry["answer_key"] = answer_key
@@ -431,6 +435,33 @@ class QAStore:
                     })
         return hits
 
+    def recall_candidates(self, message: str, scope: str, scope_id: str = "") -> List[Dict[str, Any]]:
+        """正则召回，并为每条候选带上最终生效的答案与附加判定增强。
+
+        这是 Jev 相关性判定（真提问 vs 假命中）的输入：Jev 需要同时看到 Q 与 A
+        才能判断「这条消息是否真的需要这个回答」。
+        """
+        out: List[Dict[str, Any]] = []
+        for table in self._candidate_tables(scope, scope_id):
+            for entry in table.entries:
+                if not entry.get("enabled", True):
+                    continue
+                if not matches_question(entry.get("question", ""), message):
+                    continue
+                answer = table.resolve_answer(entry)
+                out.append({
+                    "question": str(entry.get("question") or ""),
+                    "answer_text": str(answer.get("text") or ""),
+                    "answer_images": list(answer.get("images") or []),
+                    "hint": str(entry.get("hint") or ""),
+                    "entry": entry,
+                    "scope": table.scope,
+                    "scope_id": table.scope_id,
+                    "table_key": table.key,
+                    "table_label": table.label,
+                })
+        return out
+
     def find_reply_by_question(self, question: str, scope: str, scope_id: str = "") -> Optional[Dict[str, Any]]:
         """按问题原文精确取回问答对（Jev 语义路由命中后调用）。"""
         target = str(question or "").strip()
@@ -523,6 +554,9 @@ class QAStore:
                 },
                 "enabled": entry.get("enabled", True) is not False,
             }
+            hint = str(entry.get("hint") or "").strip()
+            if hint:
+                item["hint"] = hint
             key = str(entry.get("answer_key") or "").strip()
             if key:
                 item["answer_key"] = key

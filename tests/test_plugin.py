@@ -340,13 +340,22 @@ class TestClassifier(unittest.IsolatedAsyncioTestCase):
 
 
 class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
+    """端到端：固定问答表 + Jev 相关性判定。
+
+    核心契约：
+    - 正则未召回 → 不调用 Jev、不调用 LLM、无输出
+    - 召回但 Jev 判为假命中 → 静默
+    - 召回且 Jev 判为真提问 → 回复该条答案
+    """
+
     async def asyncSetUp(self):
         from main import TypeSafeAutoReplyPlugin
+        from qa_store import SCOPE_GLOBAL
 
         self.context = MagicMock()
         self.context.get_current_chat_provider_id = AsyncMock(return_value="test_provider")
         llm_resp = MagicMock()
-        llm_resp.completion_text = "这是测试自动回复。"
+        llm_resp.completion_text = "LLM 围绕答案生成的回复"
         self.context.llm_generate = AsyncMock(return_value=llm_resp)
 
         self.config = {
@@ -355,23 +364,24 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
             "enable_private": False,
             "typesafe_api_key": "ts_test_key",
             "typesafe_model": "jev-latest (推荐最新旗舰)",
-            "min_confidence": "中",
-            "allowed_reply_types": ["明确提问", "技术问题"],
+            "qa_min_confidence": "中",
             "session_cooldown": 10,
             "user_cooldown": 10,
             "max_continuous_replies": 2,
-            "reply_probability": 100,
-            "enable_reply_delay": False,  # Unit test fast execution
+            "enable_reply_delay": False,
             "debug_log": True,
-            # 固定问答表默认关闭，保持既有用例继续覆盖「大模型自由回复」路径
-            "reply_source": "大模型自由回复",
             "enable_jev_topic": True,
         }
         self.plugin = TypeSafeAutoReplyPlugin(self.context, self.config)
+        # 用固定的全局问答表，避免读到磁盘数据
+        self.plugin.qa_store.tables = {}
+        self.plugin.qa_store.replace_table(SCOPE_GLOBAL, "", [
+            {"question": "金锭%", "answer": {"text": "在本整合包中，金矿石无法在主世界生成。", "images": []},
+             "hint": "该回答适合用户询问金锭怎么做的语境", "enabled": True},
+            {"question": "%青铜%", "answer": {"text": "青铜由铜与锡合成。", "images": []}, "enabled": True},
+        ])
 
-    def _make_mock_event(
-        self, text, sender_id="user_1", group_id="group_1", is_private=False
-    ):
+    def _make_mock_event(self, text, sender_id="user_1", group_id="group_1", is_private=False):
         event = MagicMock()
         event.get_message_str.return_value = text
         event.get_sender_id.return_value = sender_id
@@ -383,187 +393,118 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
         event.is_private_chat.return_value = is_private
         event.stop_event = MagicMock()
         event.plain_result = lambda msg: {"type": "plain", "text": msg}
-
+        event.chain_result = lambda chain: {"type": "chain", "chain": chain}
         event.get_messages.return_value = []
         return event
 
-    async def test_typesafe_decision_positive(self):
-        self.plugin.classifier.classify_message = AsyncMock(
-            return_value=ClassificationDecision(
-                should_reply=True,
-                reply_type="explicit_question",
-                confidence_level="high",
-                confidence_score=0.9,
-                reason="明确提问",
-                urgency="normal",
-            )
+    def _topic(self, matched, question="", level="high", score=0.9, reason="stub"):
+        from classifier import TopicMatch
+        return TopicMatch(matched=matched, question=question, index=0,
+                          confidence_score=score, confidence_level=level, reason=reason)
+
+    async def test_no_recall_is_silent(self):
+        """正则未召回：不调用 Jev、不调用 LLM、无输出。"""
+        self.plugin.classifier.match_relevance = AsyncMock()
+        event = self._make_mock_event("今天天气真不错")
+        results = [r async for r in self.plugin.on_group_message(event)]
+        self.assertEqual(results, [])
+        self.plugin.classifier.match_relevance.assert_not_called()
+        self.context.llm_generate.assert_not_called()
+
+    async def test_false_positive_is_silent(self):
+        """召回命中但 Jev 判为假命中：静默，且不调用 LLM。"""
+        self.plugin.classifier.match_relevance = AsyncMock(
+            return_value=self._topic(False, reason="假命中")
         )
-        # Normal message (not @ bot)
-        event = self._make_mock_event("请问 Docker 怎么安装？")
-        results = [res async for res in self.plugin.on_group_message(event)]
+        event = self._make_mock_event("我买了个金锭形状的钥匙扣")
+        results = [r async for r in self.plugin.on_group_message(event)]
+        self.assertEqual(results, [])
+        self.plugin.classifier.match_relevance.assert_called_once()
+        self.context.llm_generate.assert_not_called()
+
+    async def test_true_question_replies_with_answer(self):
+        """召回且判为真提问：回复，且提示词里包含答案 A。"""
+        self.plugin.classifier.match_relevance = AsyncMock(
+            return_value=self._topic(True, question="金锭%")
+        )
+        event = self._make_mock_event("金锭怎么做")
+        results = [r async for r in self.plugin.on_group_message(event)]
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["text"], "这是测试自动回复。")
-        self.plugin.classifier.classify_message.assert_called_once()
+        # 回复走 chain_result 以支持图片答案，正文在 chain[0].text
+        self.assertEqual(results[0]["chain"][0].text, "LLM 围绕答案生成的回复")
         event.stop_event.assert_called_once()
+        # 答案 A 必须被送进提示词
+        kwargs = self.context.llm_generate.call_args[1]
+        self.assertIn("金矿石无法在主世界生成", kwargs["prompt"])
+        # 附加判定增强必须进入 Jev 的候选
+        cand = self.plugin.classifier.match_relevance.call_args[1]["candidates"]
+        self.assertEqual(cand[0]["hint"], "该回答适合用户询问金锭怎么做的语境")
+
+    async def test_low_confidence_is_silent(self):
+        """判定为真提问但置信度不足：静默。"""
+        self.plugin.classifier.match_relevance = AsyncMock(
+            return_value=self._topic(True, question="金锭%", level="low", score=0.3)
+        )
+        event = self._make_mock_event("金锭怎么做")
+        results = [r async for r in self.plugin.on_group_message(event)]
+        self.assertEqual(results, [])
+        self.context.llm_generate.assert_not_called()
+
+    async def test_jev_disabled_sends_answer_directly(self):
+        """关闭 Jev：正则命中即直接发送固定答案，不调用 LLM。"""
+        self.plugin.enable_jev_topic = False
+        self.plugin.classifier.match_relevance = AsyncMock()
+        event = self._make_mock_event("金锭怎么做")
+        results = [r async for r in self.plugin.on_group_message(event)]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["chain"][0].text, "在本整合包中，金矿石无法在主世界生成。")
+        self.plugin.classifier.match_relevance.assert_not_called()
+        self.context.llm_generate.assert_not_called()
+
+    async def test_group_scoped_table(self):
+        """群专属表优先于全局表。"""
+        from qa_store import SCOPE_GROUP
+        self.plugin.qa_store.replace_table(SCOPE_GROUP, "group_1", [
+            {"question": "金锭%", "answer": {"text": "本群专属答案", "images": []}, "enabled": True},
+        ])
+        self.plugin.enable_jev_topic = False
+        event = self._make_mock_event("金锭怎么做")
+        results = [r async for r in self.plugin.on_group_message(event)]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["chain"][0].text, "本群专属答案")
 
     async def test_pure_media_ignored(self):
         event = self._make_mock_event("[图片]")
-        results = [res async for res in self.plugin.on_group_message(event)]
-        self.assertEqual(len(results), 0)
-
-    async def test_typesafe_decision_negative(self):
-        self.plugin.classifier.classify_message = AsyncMock(
-            return_value=ClassificationDecision(
-                should_reply=False,
-                reply_type="casual_chat",
-                confidence_level="high",
-                confidence_score=0.9,
-                reason="闲聊不需回复",
-                urgency="low",
-            )
-        )
-        # Normal chat (not @ bot)
-        event = self._make_mock_event("今天天气真好啊")
-        results = [res async for res in self.plugin.on_group_message(event)]
-        self.assertEqual(len(results), 0)
-        self.plugin.classifier.classify_message.assert_called_once()
-
-    async def test_disallowed_type_skipped(self):
-        self.plugin.classifier.classify_message = AsyncMock(
-            return_value=ClassificationDecision(
-                should_reply=True,
-                reply_type="emotion",
-                confidence_level="high",
-                confidence_score=0.9,
-                reason="情绪表达",
-                urgency="normal",
-            )
-        )
-        event = self._make_mock_event("气死我了！")
-        results = [res async for res in self.plugin.on_group_message(event)]
-        self.assertEqual(len(results), 0)
-
-    async def test_low_confidence_skipped(self):
-        self.plugin.classifier.classify_message = AsyncMock(
-            return_value=ClassificationDecision(
-                should_reply=True,
-                reply_type="explicit_question",
-                confidence_level="low",
-                confidence_score=0.4,
-                reason="不确定",
-                urgency="normal",
-            )
-        )
-        event = self._make_mock_event("这是什么？")
-        results = [res async for res in self.plugin.on_group_message(event)]
+        results = [r async for r in self.plugin.on_group_message(event)]
         self.assertEqual(len(results), 0)
 
     async def test_status_command(self):
         event = self._make_mock_event("/typesafe_status")
-        results = [res async for res in self.plugin.command_typesafe_status(event)]
+        results = [r async for r in self.plugin.command_typesafe_status(event)]
         self.assertEqual(len(results), 1)
         self.assertIn("TypeSafe 智能自动回复插件状态", results[0]["text"])
-        self.assertIn("TypeSafe 判定模型: jev-latest", results[0]["text"])
+        self.assertIn("固定问答表", results[0]["text"])
 
-    async def test_test_command(self):
-        self.plugin.classifier.classify_message = AsyncMock(
-            return_value=ClassificationDecision(
-                should_reply=True,
-                reply_type="technical_issue",
-                confidence_level="high",
-                confidence_score=0.88,
-                reason="技术问题",
-                urgency="high",
-            )
+    async def test_test_command_no_recall(self):
+        """试判指令：未召回时直接说明不会调用 Jev。"""
+        event = self._make_mock_event("/typesafe_test 今天天气不错")
+        results = [r async for r in self.plugin.command_typesafe_test(event, message="今天天气不错")]
+        self.assertTrue(any("未命中任何 Q" in r["text"] for r in results))
+
+    async def test_test_command_with_recall(self):
+        """试判指令：召回后展示 Jev 判定结果。"""
+        self.plugin.classifier.match_relevance = AsyncMock(
+            return_value=self._topic(True, question="金锭%")
         )
-        event = self._make_mock_event("/typesafe_test 报错怎么解决")
-        results = [
-            res
-            async for res in self.plugin.command_typesafe_test(event, message="报错怎么解决")
-        ]
-        self.assertEqual(len(results), 2)
-        self.assertIn("分析消息", results[0]["text"])
-        self.assertIn("结构化判断结果", results[1]["text"])
-        self.assertIn("技术问题", results[1]["text"])
-
-
-    async def test_pure_media_reply_when_not_ignored(self):
-        # 验证当关闭“忽略纯媒体/图片表情消息”时，发送纯图片消息能够正常处理并回复，且传递图片 URL
-        self.plugin.ignore_pure_media = False
-        self.plugin.allowed_reply_types = ["明确提问", "求助", "讨论", "技术问题"]
-        self.plugin.classifier.classify_message = AsyncMock(
-            return_value=ClassificationDecision(
-                should_reply=True,
-                reply_type="discussion",
-                confidence_level="high",
-                confidence_score=0.92,
-                reason="用户发送了图片发起讨论",
-                urgency="normal",
-            )
-        )
-
-        event = self._make_mock_event("")
-        img_comp = MagicMock()
-        img_comp.__class__.__name__ = "Image"
-        img_comp.file = "https://example.com/screenshot.png"
-        img_comp.url = None
-        img_comp.path = None
-        event.get_messages.return_value = [img_comp]
-
-        results = [res async for res in self.plugin.on_group_message(event)]
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["text"], "这是测试自动回复。")
-        self.plugin.classifier.classify_message.assert_called_once()
-        # 验证图片 URL 被成功提取并传入了 LLM generate
-        self.context.llm_generate.assert_called()
-        call_kwargs = self.context.llm_generate.call_args[1]
-        self.assertIn("image_urls", call_kwargs)
-        self.assertEqual(call_kwargs["image_urls"], ["https://example.com/screenshot.png"])
-
-    async def test_old_config_migration_adds_discussion(self):
-        from main import TypeSafeAutoReplyPlugin
-
-        # 模拟用户 AstrBot 原有旧配置（5 项英文默认值）
-        old_config = {
-            "allowed_reply_types": [
-                "explicit_question",
-                "seek_help",
-                "technical_issue",
-                "info_query",
-                "recommendation",
-            ]
-        }
-        plugin_instance = TypeSafeAutoReplyPlugin(self.context, old_config)
-        # 验证已自动转换为中文，且自动平滑补齐了 "讨论"
-        self.assertIn("讨论", plugin_instance.allowed_reply_types)
-        self.assertIn("明确提问", plugin_instance.allowed_reply_types)
-        self.assertIn("求助", plugin_instance.allowed_reply_types)
-        # 所有项目均应为中文
-        for item in plugin_instance.allowed_reply_types:
-            self.assertIn(item, ["明确提问", "求助", "讨论", "技术问题", "信息查询", "建议请求"])
-
-    async def test_discussion_allowed_and_replies(self):
-        # 模拟“你觉得兴发集团怎么样”被 TypeSafe 识别为 discussion (讨论)
-        self.plugin.allowed_reply_types = ["明确提问", "求助", "讨论", "技术问题"]
-        self.plugin.classifier.classify_message = AsyncMock(
-            return_value=ClassificationDecision(
-                should_reply=True,
-                reply_type="discussion",
-                confidence_level="high",
-                confidence_score=0.95,
-                reason="用户探讨观点看法",
-                urgency="normal",
-            )
-        )
-        event = self._make_mock_event("你觉得兴发集团怎么样")
-        results = [res async for res in self.plugin.on_group_message(event)]
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["text"], "这是测试自动回复。")
+        event = self._make_mock_event("/typesafe_test 金锭怎么做")
+        results = [r async for r in self.plugin.command_typesafe_test(event, message="金锭怎么做")]
+        joined = chr(10).join(r["text"] for r in results)
+        self.assertIn("正则召回命中", joined)
+        self.assertIn("真提问", joined)
 
     async def test_early_short_circuit_disabled_private(self):
-        # 当未启用私聊时，私聊消息极速短路退出，不写入历史管理器
         event = self._make_mock_event("私聊消息", is_private=True)
-        results = [res async for res in self.plugin.on_private_message(event)]
+        results = [r async for r in self.plugin.on_private_message(event)]
         self.assertEqual(len(results), 0)
         self.assertNotIn("group_1", self.plugin.context_manager._history)
 
