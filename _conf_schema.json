@@ -1,0 +1,328 @@
+{
+  "enable_plugin": {
+    "description": "启用插件",
+    "type": "bool",
+    "hint": "是否启用 TypeSafe 智能自动回复功能",
+    "default": true
+  },
+  "enable_group": {
+    "description": "启用群聊自动回复",
+    "type": "bool",
+    "hint": "是否允许在群聊中主动参与并自动回复",
+    "default": true
+  },
+  "enable_private": {
+    "description": "启用私聊自动回复",
+    "type": "bool",
+    "hint": "是否允许在私聊中主动参与（私聊默认推荐关闭，使用原生逻辑）",
+    "default": false
+  },
+  "typesafe_api_key": {
+    "description": "TypeSafe API Key",
+    "type": "string",
+    "hint": "TypeSafe 控制台获取的 API 密钥 (ts_...)",
+    "default": ""
+  },
+  "typesafe_timeout": {
+    "description": "TypeSafe API 超时时间 (秒)",
+    "type": "int",
+    "hint": "TypeSafe 接口调用超时限制，默认 10 秒",
+    "default": 10
+  },
+  "typesafe_model": {
+    "description": "TypeSafe 判定模型",
+    "type": "string",
+    "hint": "TypeSafe 语义决策使用的模型。jev-latest 为官方推荐最新旗舰决策模型，速度快且判断精准",
+    "options": ["jev-latest (推荐最新旗舰)", "jev", "自定义模型"],
+    "default": "jev-latest (推荐最新旗舰)"
+  },
+  "typesafe_custom_model": {
+    "description": "TypeSafe 自定义模型名称",
+    "type": "string",
+    "hint": "当上面选择'自定义模型'时，在此填入具体的 TypeSafe 模型名称（留空则默认使用 jev-latest）",
+    "default": ""
+  },
+  "failure_mode": {
+    "description": "TypeSafe 失败处理策略",
+    "type": "string",
+    "hint": "当 TypeSafe API 超时或出错时的处理方式",
+    "options": ["静默，不回复", "基础规则判断 (问号回复)", "直通 AstrBot"],
+    "default": "静默，不回复"
+  },
+  "min_confidence": {
+    "description": "最低判断置信度",
+    "type": "string",
+    "hint": "TypeSafe 判定需要回复时的最低置信度阈值要求",
+    "options": ["高", "中", "低"],
+    "default": "中"
+  },
+  "allowed_reply_types": {
+    "description": "允许自动回复的类型",
+    "type": "list",
+    "hint": "选择允许机器人主动介入的消息意图类型（常见推荐开启：明确提问、求助、讨论、技术问题、信息查询、建议请求）",
+    "options": [
+      "明确提问",
+      "求助",
+      "讨论",
+      "技术问题",
+      "信息查询",
+      "建议请求",
+      "闲聊",
+      "情绪表达",
+      "玩笑",
+      "陈述",
+      "打招呼",
+      "感谢",
+      "告别",
+      "其他"
+    ],
+    "default": [
+      "明确提问",
+      "求助",
+      "讨论",
+      "技术问题",
+      "信息查询",
+      "建议请求"
+    ]
+  },
+  "model_mode": {
+    "description": "回复模型选择模式",
+    "type": "string",
+    "hint": "跟随当前会话模型或指定已配置的 AstrBot Provider",
+    "options": ["跟随当前会话模型", "指定已配置 Provider"],
+    "default": "跟随当前会话模型"
+  },
+  "custom_provider_id": {
+    "description": "指定 AstrBot Provider ID",
+    "type": "string",
+    "hint": "当选择指定模型时，填入 AstrBot 中已配置的 Provider ID",
+    "default": ""
+  },
+  "reply_length_mode": {
+    "description": "回复长度模式",
+    "type": "string",
+    "hint": "控制生成的回答篇幅",
+    "options": ["极短 (20~50字)", "简短 (50~100字)", "正常 (100~250字)", "详细 (250~500字)", "自然/精炼"],
+    "default": "简短 (50~100字)"
+  },
+  "max_chars": {
+    "description": "最大回复字数保护",
+    "type": "int",
+    "hint": "回复文本的最大字数限制，超出将被合理截断保护",
+    "default": 200
+  },
+  "reply_style": {
+    "description": "回复风格",
+    "type": "string",
+    "hint": "机器人的语言语气与表达风格",
+    "options": ["自然", "简洁", "专业", "友好", "幽默", "活泼", "严谨", "群友", "自定义"],
+    "default": "自然"
+  },
+  "custom_prompt": {
+    "description": "回复附加提示词",
+    "type": "text",
+    "hint": "自定义注入 LLM 的附加 Prompt 要求（如：自然交流，不主动说明是 AI）",
+    "default": "你正在群聊中参与讨论。回答尽量自然简洁，像普通群友一样交流。除非必要不使用 Markdown 标题，不要主动说明自己是 AI。"
+  },
+  "enable_reply_delay": {
+    "description": "启用回复延时",
+    "type": "bool",
+    "hint": "模拟真人思考与打字耗时，防止秒回显得突兀机械",
+    "default": true
+  },
+  "reply_delay_mode": {
+    "description": "回复延时模式",
+    "type": "string",
+    "hint": "选择在设定区间内随机延时，或每次等待固定秒数",
+    "options": ["随机延时 (推荐)", "固定延时"],
+    "default": "随机延时 (推荐)"
+  },
+  "reply_delay_min": {
+    "description": "最小随机延时 (秒)",
+    "type": "int",
+    "hint": "随机延时模式下的最小等待秒数",
+    "default": 1
+  },
+  "reply_delay_max": {
+    "description": "最大随机延时 (秒)",
+    "type": "int",
+    "hint": "随机延时模式下的最大等待秒数 (如 3 秒或 5 秒)",
+    "default": 3
+  },
+  "reply_delay_fixed": {
+    "description": "固定延时时长 (秒)",
+    "type": "int",
+    "hint": "固定延时模式下的等待秒数",
+    "default": 2
+  },
+  "context_message_count": {
+    "description": "TypeSafe 上下文消息数量",
+    "type": "int",
+    "hint": "作为判断依据的最近聊天消息条数 (0, 3, 5, 10)",
+    "options": [0, 3, 5, 10],
+    "default": 3
+  },
+  "at_bot_mode": {
+    "description": "被 @ 机器人时处理策略",
+    "type": "string",
+    "hint": "在群聊中被 @ 机器人时，选择是否忽略 TypeSafe AI 直接调用 LLM 回复、经由 TypeSafe AI 判定、或交由 AstrBot 原生处理",
+    "options": [
+      "忽略 TypeSafe AI (直接调用 LLM 回复)",
+      "使用 TypeSafe AI 判定",
+      "不处理，交由 AstrBot 原生处理"
+    ],
+    "default": "忽略 TypeSafe AI (直接调用 LLM 回复)"
+  },
+  "detect_bot_name": {
+    "description": "启用机器人名称/别名检测",
+    "type": "bool",
+    "hint": "是否在消息文本中匹配机器人名字或别名",
+    "default": true
+  },
+  "bot_aliases": {
+    "description": "机器人别名列表",
+    "type": "list",
+    "hint": "用于检测提及机器人的别名列表（例如：小白、机器人、AI、助手）",
+    "default": ["小白", "机器人", "AI", "助手"]
+  },
+  "session_cooldown": {
+    "description": "同一会话回复冷却 (秒)",
+    "type": "int",
+    "hint": "机器人主动回复后，同会话普通消息在此时间内不再主动触发（@机器人可绕过）",
+    "default": 30
+  },
+  "user_cooldown": {
+    "description": "同一用户主动回复冷却 (秒)",
+    "type": "int",
+    "hint": "同一用户在此时间内不会再次主动触发机器人",
+    "default": 30
+  },
+  "max_continuous_replies": {
+    "description": "最大连续主动回复次数",
+    "type": "int",
+    "hint": "连续主动介入达到此轮数后暂停主动发言，直至被 @ 或其他用户交流",
+    "default": 2
+  },
+  "reply_probability": {
+    "description": "回复参与概率 (%)",
+    "type": "int",
+    "hint": "TypeSafe 判定需要回复后，最终决定参与的百分比概率 (1-100)",
+    "default": 100
+  },
+  "filter_mode": {
+    "description": "黑白名单模式",
+    "type": "string",
+    "hint": "选择黑白名单生效模式",
+    "options": ["全部允许 (仅黑名单拦截)", "仅白名单", "仅黑名单", "黑名单与白名单并用"],
+    "default": "仅黑名单"
+  },
+  "session_whitelist": {
+    "description": "会话白名单",
+    "type": "list",
+    "hint": "允许主动回复的群号/会话 ID 列表",
+    "default": []
+  },
+  "session_blacklist": {
+    "description": "会话黑名单",
+    "type": "list",
+    "hint": "禁止主动回复的群号/会话 ID 列表",
+    "default": []
+  },
+  "user_whitelist": {
+    "description": "用户白名单",
+    "type": "list",
+    "hint": "允许主动回复的用户 ID 列表",
+    "default": []
+  },
+  "user_blacklist": {
+    "description": "用户黑名单",
+    "type": "list",
+    "hint": "禁止主动回复的用户 ID 列表（如其他 Bot、管理员测试账号）",
+    "default": []
+  },
+  "min_message_length": {
+    "description": "最短检测长度",
+    "type": "int",
+    "hint": "少于该字数的消息直接忽略，不消耗 TypeSafe API 请求",
+    "default": 2
+  },
+  "max_message_length": {
+    "description": "最长检测长度",
+    "type": "int",
+    "hint": "超过该字数的消息直接忽略",
+    "default": 2000
+  },
+  "ignore_commands": {
+    "description": "忽略 AstrBot 命令",
+    "type": "bool",
+    "hint": "忽略以 / 等前缀开头的指令消息",
+    "default": true
+  },
+  "ignore_bots": {
+    "description": "忽略机器人自己的消息",
+    "type": "bool",
+    "hint": "忽略机器人自身发出的消息",
+    "default": true
+  },
+  "ignore_pure_media": {
+    "description": "忽略纯媒体/图片表情消息",
+    "type": "bool",
+    "hint": "忽略不包含有效对话文本的纯图片、纯表情或媒体消息",
+    "default": true
+  },
+  "force_reply_keywords": {
+    "description": "强制触发关键词",
+    "type": "list",
+    "hint": "包含这些关键词的消息强制进入判断或回复",
+    "default": ["有人知道", "怎么解决", "求助", "请问", "怎么办"]
+  },
+  "force_reply_mode": {
+    "description": "强制关键词触发模式",
+    "type": "string",
+    "hint": "进入 TypeSafe 判断还是直接回复",
+    "options": ["进入 TypeSafe 判断", "直接回复"],
+    "default": "进入 TypeSafe 判断"
+  },
+  "ignore_keywords": {
+    "description": "忽略关键词",
+    "type": "list",
+    "hint": "包含这些关键词的消息直接跳过",
+    "default": ["机器人别说话", "不用机器人回答"]
+  },
+  "force_trigger_regex": {
+    "description": "强制触发正则",
+    "type": "string",
+    "hint": "匹配正则表达式的消息强制触发",
+    "default": ""
+  },
+  "ignore_regex": {
+    "description": "忽略正则",
+    "type": "string",
+    "hint": "匹配正则表达式的消息直接跳过",
+    "default": ""
+  },
+  "rate_limit_per_minute": {
+    "description": "TypeSafe 每分钟最大请求数",
+    "type": "int",
+    "hint": "防止活跃群聊瞬间消耗大量 API 请求的全局限流保护",
+    "default": 60
+  },
+  "enable_cache": {
+    "description": "启用 TypeSafe 判断缓存",
+    "type": "bool",
+    "hint": "是否对短时间内重复收到的相同消息复用判断结果",
+    "default": false
+  },
+  "cache_ttl": {
+    "description": "缓存有效期 (秒)",
+    "type": "int",
+    "hint": "判断结果缓存有效秒数",
+    "default": 60
+  },
+  "debug_log": {
+    "description": "启用调试日志",
+    "type": "bool",
+    "hint": "开启后在后台终端输出详细的判定过程与上下文信息",
+    "default": false
+  }
+}

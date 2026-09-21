@@ -1,0 +1,6 @@
+name: astrbot_plugin_typesafe_autoreply
+desc: 使用 TypeSafe AI 判断聊天消息是否需要 AI 主动参与，并调用 AstrBot 已配置的大语言模型生成自然回复。
+help: https://github.com/AstrBotDevs/AstrBot
+version: v1.0.5
+author: AstrBot & TypeSafe Community
+repo: https://github.com/AstrBotDevs/AstrBot

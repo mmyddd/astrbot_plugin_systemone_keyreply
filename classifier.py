@@ -1,0 +1,258 @@
+from dataclasses import dataclass
+from typing import Dict, Any, List, Optional
+import logging
+
+from typesafe_sdk import Choice
+import sys
+from pathlib import Path
+
+plugin_dir = str(Path(__file__).parent.resolve())
+if plugin_dir not in sys.path:
+    sys.path.insert(0, plugin_dir)
+
+try:
+    from .typesafe_client import TypeSafeClientWrapper
+    from .utils import normalize_failure_mode, normalize_confidence_level
+except (ImportError, ValueError):
+    from typesafe_client import TypeSafeClientWrapper
+    from utils import normalize_failure_mode, normalize_confidence_level
+
+logger = logging.getLogger("astrbot")
+
+# 回复类型名称映射，供日志和格式化展示
+REPLY_TYPE_NAMES = {
+    "explicit_question": "明确提问",
+    "seek_help": "求助",
+    "technical_issue": "技术问题",
+    "info_query": "信息查询",
+    "recommendation": "建议请求",
+    "discussion": "讨论",
+    "casual_chat": "闲聊",
+    "emotion": "情绪表达",
+    "joke": "玩笑",
+    "statement": "陈述",
+    "greeting": "打招呼",
+    "thanks": "感谢",
+    "farewell": "告别",
+    "other": "其他",
+}
+
+# 中文名称映射回英文键名
+REPLY_NAME_TO_KEY = {v: k for k, v in REPLY_TYPE_NAMES.items()}
+
+
+@dataclass
+class ClassificationDecision:
+    should_reply: bool
+    reply_type: str
+    confidence_level: str  # high, medium, low
+    confidence_score: float
+    reason: str
+    urgency: str  # high, normal, low
+    is_fallback: bool = False
+
+    @property
+    def reply_type_display(self) -> str:
+        return REPLY_TYPE_NAMES.get(self.reply_type, self.reply_type)
+
+
+class MessageClassifier:
+    """负责将消息转换为 TypeSafe System One 提示，并解析结构化裁决结果"""
+
+    def __init__(self, client_wrapper: TypeSafeClientWrapper):
+        self.client_wrapper = client_wrapper
+        self._questions = self.build_system_one_questions()
+
+    def build_system_one_questions(self) -> Dict[str, Choice]:
+        """构造用于消息判断的结构化 Choice 问题集"""
+        should_reply_question = Choice(
+            instructions=(
+                "你负责判断群聊中的当前消息是否适合由 AI 助手主动回复。\n"
+                "原则：宁可少回复，也不要乱插话。只有机器人能够明显提供帮助或进行有价值的讨论交流时才主动参与。\n"
+                "需主动回复：用户提出明确问题、寻求帮助、询问信息、发起话题讨论（如：你觉得XX怎么样/大家怎么看）、希望获得建议、或发送了图片/截图（如分享图片讨论、发报错截图求助等）。\n"
+                "保持静默：群友互相对骂、纯表情包刷屏、简单机械回应（如：收到/1/好的/谢谢）、用户间针对特定人的私聊、或纯陈述无讨论意义的发言。"
+            ),
+            criteria={
+                "yes": "需要主动回复（用户提出了明确提问/求助/信息查询/观点讨论，或发送了图片内容希望互动，且机器人能提供价值）",
+                "no": "不需要回复，保持静默（日常表情刷屏、无意义短句、针对其他人的对话或无需回应的发言）",
+            },
+        )
+
+        reply_type_question = Choice(
+            instructions="当前消息最符合以下哪种意图或类型？",
+            criteria={
+                "explicit_question": "明确提问（如：这个怎么设置？）",
+                "seek_help": "求助（如：有人能帮我看看吗？或发送报错截图求助）",
+                "technical_issue": "技术问题（如：Docker 为什么启动失败？）",
+                "info_query": "信息查询（如：今天有什么更新？）",
+                "recommendation": "建议请求（如：大家推荐什么 NAS？）",
+                "discussion": "讨论（如：你觉得XX怎么样？大家怎么看？发送图片/内容发起讨论）",
+                "casual_chat": "闲聊（如：今天好累啊）",
+                "emotion": "情绪表达（如：气死我了）",
+                "joke": "玩笑（如：哈哈哈哈）",
+                "statement": "陈述（如：我已经处理好了）",
+                "greeting": "打招呼（如：早上好）",
+                "thanks": "感谢（如：谢谢）",
+                "farewell": "告别（如：晚安）",
+                "other": "其他消息",
+            },
+        )
+
+        urgency_question = Choice(
+            instructions="用户获得答复的紧迫程度？",
+            criteria={
+                "high": "紧急（遇到故障报错或急迫求助）",
+                "normal": "普通（正常求助与咨询）",
+                "low": "低（闲聊或不急切）",
+            },
+        )
+
+        return {
+            "should_reply": should_reply_question,
+            "reply_type": reply_type_question,
+            "urgency": urgency_question,
+        }
+
+    async def classify_message(
+        self,
+        state: dict,
+        cache_key_text: Optional[str] = None,
+    ) -> ClassificationDecision:
+        """调用 TypeSafe 并解析得出最终裁决对象"""
+        questions = self._questions
+
+        api_result = await self.client_wrapper.call_system_one(
+            state=state,
+            questions=questions,
+            cache_key_text=cache_key_text,
+        )
+
+        if not api_result or not api_result.get("success"):
+            # 处理 API 降级模式 (统一归一化处理中英文降级模式)
+            raw_failure_mode = (
+                api_result.get("failure_mode") if api_result else self.client_wrapper.failure_mode
+            )
+            failure_mode = normalize_failure_mode(raw_failure_mode)
+            error_reason = api_result.get("error_reason", "unknown") if api_result else "no_result"
+
+            if failure_mode == "pass_to_astrbot":
+                return ClassificationDecision(
+                    should_reply=True,
+                    reply_type="other",
+                    confidence_level="medium",
+                    confidence_score=0.6,
+                    reason=f"TypeSafe API 故障降级(直通 AstrBot): {error_reason}",
+                    urgency="normal",
+                    is_fallback=True,
+                )
+            elif failure_mode == "rule_based":
+                # 规则备用降级：若是问号结尾则尝试回复
+                current_text = ""
+                if isinstance(state.get("current_message"), dict):
+                    current_text = state["current_message"].get("text", "")
+                has_question_mark = "?" in current_text or "？" in current_text
+                return ClassificationDecision(
+                    should_reply=has_question_mark,
+                    reply_type="explicit_question" if has_question_mark else "casual_chat",
+                    confidence_level="low",
+                    confidence_score=0.5,
+                    reason=f"TypeSafe API 故障降级(基础规则判断): {error_reason}",
+                    urgency="normal",
+                    is_fallback=True,
+                )
+            else:
+                # 默认 silent：静默不回复
+                return ClassificationDecision(
+                    should_reply=False,
+                    reply_type="other",
+                    confidence_level="low",
+                    confidence_score=0.0,
+                    reason=f"TypeSafe API 故障静默降级: {error_reason}",
+                    urgency="low",
+                    is_fallback=True,
+                )
+
+        # 成功拿到 SystemOneResponse
+        raw_choices = api_result.get("raw_choices", {})
+
+        # 解析 should_reply
+        should_reply_choice = raw_choices.get("should_reply")
+        should_reply_val = False
+        confidence_score = 0.5
+        if should_reply_choice:
+            should_reply_val = should_reply_choice.choice == "yes"
+            try:
+                confidence_score = float(should_reply_choice.confidence)
+            except (ValueError, TypeError):
+                confidence_score = 0.5
+
+        # 解析 reply_type
+        reply_type_choice = raw_choices.get("reply_type")
+        reply_type_val = "other"
+        if reply_type_choice and reply_type_choice.choice:
+            reply_type_val = reply_type_choice.choice
+
+        # 解析 urgency
+        urgency_choice = raw_choices.get("urgency")
+        urgency_val = "normal"
+        if urgency_choice and urgency_choice.choice:
+            urgency_val = urgency_choice.choice
+
+        # 置信度等级映射
+        confidence_level = self.map_confidence_level(confidence_score)
+
+        reason = (
+            f"TypeSafe判断: should_reply={should_reply_val}, "
+            f"type={reply_type_val}, confidence={confidence_level}({confidence_score:.2f})"
+        )
+
+        return ClassificationDecision(
+            should_reply=should_reply_val,
+            reply_type=reply_type_val,
+            confidence_level=confidence_level,
+            confidence_score=confidence_score,
+            reason=reason,
+            urgency=urgency_val,
+            is_fallback=False,
+        )
+
+    @staticmethod
+    def map_confidence_level(score: float) -> str:
+        """置信度数值转等级"""
+        if score >= 0.75:
+            return "high"
+        elif score >= 0.55:
+            return "medium"
+        else:
+            return "low"
+
+    @staticmethod
+    def is_confidence_sufficient(level: str, required_min: str) -> bool:
+        """判断是否满足最低置信度门槛，支持中英双语输入"""
+        rank = {"low": 1, "medium": 2, "high": 3}
+        current_norm = normalize_confidence_level(level)
+        required_norm = normalize_confidence_level(required_min)
+        current_rank = rank.get(current_norm, 1)
+        required_rank = rank.get(required_norm, 2)
+        return current_rank >= required_rank
+
+    @staticmethod
+    def is_reply_type_allowed(reply_type: str, allowed_types: List[str]) -> bool:
+        """判断意图类型是否在用户允许的名单内，支持中文名和英文键名双向匹配"""
+        if not allowed_types:
+            return False
+
+        # 转换为规范英文键名集合与原始集合
+        canonical_allowed = set()
+        for t in allowed_types:
+            t_str = str(t).strip()
+            if not t_str:
+                continue
+            canonical_allowed.add(t_str)
+            if t_str in REPLY_NAME_TO_KEY:
+                canonical_allowed.add(REPLY_NAME_TO_KEY[t_str])
+
+        return (
+            reply_type in canonical_allowed
+            or REPLY_TYPE_NAMES.get(reply_type, "") in canonical_allowed
+        )
