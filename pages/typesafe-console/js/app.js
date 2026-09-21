@@ -8,7 +8,7 @@
   const TS = window.TS;
   const $ = TS.$, $$ = TS.$$, show = TS.show, format = TS.format, state = TS.state;
 
-  const VIEWS = ['config', 'status', 'try'];
+  const VIEWS = ['config', 'qa', 'status', 'try'];
   let statusTimer = 0;
 
   /* ── 状态提示 ─────────────────────────────────────────── */
@@ -84,7 +84,7 @@
     if (!silent) setStatus('正在加载配置…', 'busy');
     setBusy(true);
     try {
-      await Promise.all([loadConfig(), loadStatus()]);
+      await Promise.all([loadConfig(), loadStatus(), TS.qa.load()]);
       setStatus(silent ? '已同步' : '配置已就绪', 'success');
     } catch (error) {
       const message = error && error.message ? error.message : String(error);
@@ -154,6 +154,7 @@
     applyTheme(initTheme());
     applyRoute();
     bind();
+    TS.qa.bind();
     TS.views.renderRecent();
     TS.views.renderTryResult();
 
@@ -162,6 +163,11 @@
       $('#config-sections').innerHTML =
         '<div class="card"><div class="card-body"><div class="empty">'
         + '本页面需要通过 AstrBot 面板的插件页进入，才能读写插件配置。</div></div></div>';
+      const qaRows = $('#qa-rows');
+      if (qaRows) {
+        qaRows.innerHTML = '<div class="empty">'
+          + '本页面需要通过 AstrBot 面板的插件页进入，才能读取问答表。</div>';
+      }
       return;
     }
 

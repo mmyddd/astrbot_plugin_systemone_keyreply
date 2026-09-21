@@ -16,7 +16,7 @@ from astrbot.api import AstrBotConfig
 from astrbot.api.message_components import Plain, Image
 
 try:
-    from .qa_store import QAStore, SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE
+    from .qa_store import QAStore, SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE, regroup_answers
     from .qa_engine import (
         MODE_CLASSIC,
         MODE_JEV,
@@ -48,7 +48,7 @@ try:
         normalize_typesafe_model,
     )
 except (ImportError, ValueError):
-    from qa_store import QAStore, SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE
+    from qa_store import QAStore, SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE, regroup_answers
     from qa_engine import (
         MODE_CLASSIC,
         MODE_JEV,
@@ -1535,6 +1535,8 @@ class TypeSafeAutoReplyPlugin(Star):
             return {"message": "entries 必须是数组"}, 400
 
         table = self.qa_store.replace_table(scope, scope_id, entries)
+        # 保存时按答案指纹重新分组，使「多个 Q 指向同一个 A」在页面上可直接体现
+        regroup_answers(table)
         if not self.qa_store.save():
             return {"message": "写入数据文件失败，请检查目录权限"}, 500
 

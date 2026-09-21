@@ -120,7 +120,11 @@
     configReset(fields) { return api.post('console/config/reset', { fields: fields }); },
     status() { return api.get('console/status'); },
     probe() { return api.post('console/probe', {}); },
-    tryMessage(payload) { return api.post('console/try', payload); }
+    tryMessage(payload) { return api.post('console/try', payload); },
+    qaList() { return api.get('console/qa/list'); },
+    qaSave(payload) { return api.post('console/qa/save', payload); },
+    qaImport(payload) { return api.post('console/qa/import', payload); },
+    qaTest(payload) { return api.post('console/qa/test', payload); }
   };
 
   /* ── 状态容器 ─────────────────────────────────────────── */
@@ -134,6 +138,11 @@
     tryInput: '',
     tryRecent: [],
     tryResult: null,
+    qa: null,
+    qaScope: { scope: 'global', scope_id: '' },
+    qaDraft: [],
+    qaDirty: false,
+    qaTestResult: null,
     lastSyncAt: null
   };
 

@@ -62,7 +62,9 @@ const hosts = {};
 const ROOT = makeEl('body');
 for (const id of ['config-sections','toast-stack','status-body','try-result','try-recent','nav-dirty','action-note',
   'save-btn','refresh-btn','theme-toggle','probe-btn','probe-result','try-btn','try-input','try-add-recent',
-  'data-status','theme-color','reload-defaults','try-recent-host']) {
+  'data-status','theme-color','reload-defaults','try-recent-host',
+  'qa-rows','qa-save-btn','qa-scope-bar','qa-mode-bar','qa-import-path','qa-import-btn','qa-add-row',
+  'qa-add-scope','qa-test-input','qa-test-btn','qa-test-result','qa-nav-dirty','qa-new-kind','qa-new-id','qa-import-hint']) {
   const n = makeEl('div'); n.id = id; n.setAttribute('id', id); hosts['#' + id] = n; ROOT.appendChild(n);
 }
 
@@ -91,7 +93,7 @@ sandbox.confirm = () => true;
 const ctx = vm.createContext(sandbox);
 
 const errors = [];
-for (const f of ['data','config','views','app']) {
+for (const f of ['data','config','qa','views','app']) {
   try { vm.runInContext(fs.readFileSync(DIR + f + '.js', 'utf8'), ctx, { filename: f + '.js' }); }
   catch (e) { errors.push(f + '.js: ' + e.message); }
 }
@@ -156,6 +158,57 @@ t('renderTryResult 三种分支', () => {
   TS.views.renderTryResult();
 });
 t('renderRecent 增删', () => { TS.state.tryRecent = [{sender:'A',text:'hi'}]; TS.views.renderRecent(); TS.state.tryRecent = []; TS.views.renderRecent(); });
+
+/* ── 固定问答表视图 ─────────────────────────────────── */
+t('qa.render 作用域与行渲染', () => {
+  TS.state.qa = {
+    tables: [
+      { key: 'global', scope: 'global', scope_id: '', entries: [
+        { question: '怎么安装%', answer: { text: '统一答案', images: [] }, enabled: true },
+        { question: '%如何安装%', answer: { text: '统一答案', images: [] }, enabled: true }
+      ]},
+      { key: 'group:111', scope: 'group', scope_id: '111', entries: [
+        { question: '群专属问题', answer: { text: '群专属答案', images: [] }, enabled: true }
+      ]}
+    ],
+    summary: { global_entries: 2, groups: ['111'], privates: [], total_entries: 3 },
+    import_candidates: [], configured_import_path: '', use_qa_table: true,
+    enable_jev_topic: true, mode: 'jev', mode_label: 'Jev 话题模式', qa_min_confidence: '中',
+    context_message_count: 3
+  };
+  TS.state.qaScope = { scope: 'global', scope_id: '' };
+  TS.qa.loadDraft();
+  const rows = hosts['#qa-rows'].children;
+  if (!rows.length) throw new Error('未渲染任何问答分组');
+  const scopeBar = hosts['#qa-scope-bar'].children;
+  if (!scopeBar.length) throw new Error('未渲染作用域切换');
+  const modeBar = hosts['#qa-mode-bar'].children;
+  if (!modeBar.length) throw new Error('未渲染模式条');
+});
+
+t('qa 多 Q 一 A 归组', () => {
+  // 两条 Q 共用同一答案 -> 应渲染为一个分组
+  const groups = hosts['#qa-rows'].children.filter(
+    n => n.className && String(n.className).indexOf('qa-group') >= 0
+  );
+  if (groups.length !== 1) throw new Error('期望 1 个分组，实际 ' + groups.length);
+});
+
+t('qa 切换到群作用域', () => {
+  TS.state.qaScope = { scope: 'group', scope_id: '111' };
+  TS.qa.loadDraft();
+  const groups = hosts['#qa-rows'].children.filter(
+    n => n.className && String(n.className).indexOf('qa-group') >= 0
+  );
+  if (!groups.length) throw new Error('群作用域未渲染');
+});
+
+t('qa 空表渲染占位', () => {
+  TS.state.qaScope = { scope: 'private', scope_id: '999' };
+  TS.qa.loadDraft();
+  const kids = hosts['#qa-rows'].children;
+  if (!kids.length) throw new Error('空表未渲染任何内容');
+});
 
 console.log('脚本加载错误: ' + (errors.length ? errors.join(' | ') : '(无)'));
 console.log('');

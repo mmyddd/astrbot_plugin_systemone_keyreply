@@ -40,6 +40,14 @@
           <span>配置中心</span>
           <span class="nav-badge nav-badge-warn" id="nav-dirty" hidden>未保存</span>
         </a>
+        <a class="nav-pill" href="#/qa" data-nav="qa">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 5.5h16v11H8.5L5 20v-3.5H4z"></path>
+            <path d="M8.5 9.5h7M8.5 12.5h4"></path>
+          </svg>
+          <span>固定问答</span>
+          <span class="nav-badge nav-badge-warn" id="qa-nav-dirty" hidden>未保存</span>
+        </a>
         <a class="nav-pill" href="#/status" data-nav="status">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3.5" y="3.5" width="7" height="7" rx="2.2"></rect><rect x="13.5" y="3.5" width="7" height="7" rx="2.2"></rect>
@@ -108,6 +116,96 @@
               </svg>
               保存并重载
             </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ 固定问答表 ══ -->
+      <section data-view-panel="qa" hidden>
+        <div class="page-head">
+          <h1>固定问答表</h1>
+          <p>KeyReply 兼容的问答表。消息先经本地正则召回，命中才触发 Jev 审核，再由 LLM 围绕该条答案生成回复；未命中一律静默。</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>生效模式</h2>
+              <p>由「配置中心 → 固定问答表 → 回复来源」决定</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="qa-mode-bar" class="qa-mode-bar"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>作用域</h2>
+              <p>每个群 / 每个私聊可拥有独立问答表；未单独配置的会话回退到全局默认表</p>
+            </div>
+            <div class="card-head-right">
+              <select class="select" id="qa-new-kind" style="width:auto">
+                <option value="group">群聊</option>
+                <option value="private">私聊</option>
+              </select>
+              <input class="input" id="qa-new-id" type="text" placeholder="群号 / QQ" style="width:140px">
+              <button class="btn btn-ghost btn-sm" type="button" id="qa-add-scope">新建作用域</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="qa-scope-bar"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>问答对</h2>
+              <p>答案相同的多条 Q 会自动归为一组（多 Q 一 A）</p>
+            </div>
+            <div class="card-head-right">
+              <label class="btn btn-ghost btn-sm" for="qa-file">从 KeyReply 导入</label>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="note" style="margin-bottom:14px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"></circle><path d="M12 8.2v5.2M12 16.4h.01"></path>
+              </svg>
+              <span>「%」是通配符，代表任意内容。例如 <code>怎么安装%</code> 能命中「怎么安装插件」，<code>%今天%天气%</code> 能命中「我想了解今天的天气情况」。</span>
+            </div>
+            <div class="qa-import-row">
+              <input class="input input-mono" id="qa-import-path" type="text" placeholder="triggers.yml 完整路径（留空自动探测）">
+              <button class="btn btn-primary btn-sm" type="button" id="qa-import-btn">导入</button>
+            </div>
+            <p class="field-meta" id="qa-import-hint" style="margin:6px 0 14px"></p>
+
+            <div id="qa-rows"></div>
+            <div style="margin-top:14px">
+              <button class="btn btn-ghost btn-sm" type="button" id="qa-add-row">新增一条</button>
+            </div>
+          </div>
+          <div class="action-bar">
+            <span class="action-note" id="qa-note">—</span>
+            <button class="btn btn-primary" type="button" id="qa-save-btn" disabled>保存当前作用域</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>命中测试</h2>
+              <p>不会发送任何消息，也不会消耗 LLM 调用</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="qa-test-row">
+              <input class="input" id="qa-test-input" type="text" placeholder="输入一条消息，看看会不会命中、命中哪一条">
+              <button class="btn btn-primary" type="button" id="qa-test-btn">测试</button>
+            </div>
+            <div id="qa-test-result" style="margin-top:14px"></div>
           </div>
         </div>
       </section>
@@ -205,6 +303,7 @@
 
 <script src="./js/data.js"></script>
 <script src="./js/config.js"></script>
+<script src="./js/qa.js"></script>
 <script src="./js/views.js"></script>
 <script src="./js/app.js"></script>
 </body>
