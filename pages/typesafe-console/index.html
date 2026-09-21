@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" id="theme-color" content="#f5f6fa">
+<title>TypeSafe · 配置中心</title>
+<style id="boot-style">
+  html, body { margin: 0; background: #f5f6fa; color: #0f1520; }
+  html[data-theme="dark"], html[data-theme="dark"] body { background: #090c12; color: #e8edf6; }
+</style>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<div class="app">
+  <header class="appbar">
+    <div class="appbar-inner">
+      <a class="brand" href="#/config">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 6.5h9.5M18 6.5h2M4 17.5h2M10.5 17.5H20"></path>
+            <circle cx="15.8" cy="6.5" r="2.2"></circle>
+            <circle cx="7.2" cy="17.5" r="2.2"></circle>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <strong>TypeSafe</strong>
+          <em id="brand-version">配置中心</em>
+        </span>
+      </a>
+
+      <nav class="nav-pills" aria-label="主导航">
+        <a class="nav-pill" href="#/config" data-nav="config">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 7.5h14M5 12h14M5 16.5h14"></path><circle cx="9.5" cy="7.5" r="2"></circle>
+            <circle cx="15" cy="12" r="2"></circle><circle cx="8" cy="16.5" r="2"></circle>
+          </svg>
+          <span>配置中心</span>
+          <span class="nav-badge nav-badge-warn" id="nav-dirty" hidden>未保存</span>
+        </a>
+        <a class="nav-pill" href="#/status" data-nav="status">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="7" height="7" rx="2.2"></rect><rect x="13.5" y="3.5" width="7" height="7" rx="2.2"></rect>
+            <rect x="3.5" y="13.5" width="7" height="7" rx="2.2"></rect><rect x="13.5" y="13.5" width="7" height="7" rx="2.2"></rect>
+          </svg>
+          <span>运行状态</span>
+        </a>
+        <a class="nav-pill" href="#/try" data-nav="try">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 4.5h6M10 4.5V3h4v1.5"></path>
+            <path d="M6.5 6.5h11v13a1.5 1.5 0 0 1-1.5 1.5H8a1.5 1.5 0 0 1-1.5-1.5v-13z"></path>
+            <path d="M9.5 11h5M9.5 14.5h3"></path>
+          </svg>
+          <span>在线试判</span>
+        </a>
+      </nav>
+
+      <div class="appbar-actions">
+        <span class="status-chip" id="data-status" data-state="idle" aria-live="polite">等待加载</span>
+        <button class="icon-btn" type="button" id="theme-toggle" aria-label="切换深浅色主题" title="切换深浅色主题">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.1"></circle>
+            <path d="M12 3.6v1.9M12 18.5v1.9M4.3 12h1.9M17.8 12h1.9M6.6 6.6l1.3 1.3M16.1 16.1l1.3 1.3M17.4 6.6l-1.3 1.3M7.9 16.1l-1.3 1.3"></path>
+          </svg>
+        </button>
+        <button class="icon-btn" type="button" id="refresh-btn" aria-label="刷新配置" title="刷新配置 (R)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 12a8 8 0 1 1-2.6-5.9"></path><path d="M20 4.6V10h-5.4"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main" id="main" tabindex="-1">
+    <div class="container">
+
+      <!-- ══ 配置中心 ══ -->
+      <section data-view-panel="config">
+        <div class="page-head">
+          <h1>配置中心</h1>
+          <p>与 AstrBot 插件配置（_conf_schema.json）共用同一份数据，两处修改互相同步。保存后插件会尝试热重载，无需重启 AstrBot。</p>
+        </div>
+
+        <div class="note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"></circle><path d="M12 8.2v5.2M12 16.4h.01"></path>
+          </svg>
+          <span>首次使用请在「TypeSafe 判定」中填写 <strong>API Key</strong>，然后在「运行状态」页点一次连通性测试确认可用。其余 47 项均有可用默认值，可以先跑起来再逐项微调。</span>
+        </div>
+
+        <div id="config-sections" class="view-loading">
+          <div class="skeleton"></div>
+          <div class="skeleton"></div>
+          <div class="skeleton"></div>
+        </div>
+
+        <div class="card" style="margin-top:18px">
+          <div class="action-bar">
+            <span class="action-note" id="action-note">所有配置已与后端同步</span>
+            <button class="btn btn-ghost" type="button" id="reload-defaults">填入内置默认值</button>
+            <button class="btn btn-primary" type="button" id="save-btn" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M5 4.5h11L19.5 8v11.5A1.5 1.5 0 0 1 18 21H6a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 6 4.5z"></path>
+                <path d="M8.5 4.5v5h7v-5M8.5 16h7"></path>
+              </svg>
+              保存并重载
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ 运行状态 ══ -->
+      <section data-view-panel="status" hidden>
+        <div class="page-head">
+          <h1>运行状态</h1>
+          <p>当前生效的判定与回复策略，等价于群里的 <code>/typesafe_status</code> 指令，但更完整且可一键测试连通性。</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>连通性与生效参数</h2>
+              <p>修改配置后这里会同步刷新</p>
+            </div>
+            <div class="card-head-right">
+              <button class="btn btn-ghost btn-sm" type="button" id="probe-btn">测试 TypeSafe 连通性</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <p class="note" id="probe-result" hidden style="margin-bottom:14px"></p>
+            <div id="status-body">
+              <div class="view-loading">
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ 在线试判 ══ -->
+      <section data-view-panel="try" hidden>
+        <div class="page-head">
+          <h1>在线试判</h1>
+          <p>输入一段消息，用当前的 API Key、模型与允许类型配置真实调用一次 TypeSafe，查看它会怎么判。不会触发任何真实回复。</p>
+        </div>
+
+        <div class="try-layout">
+          <div class="card" style="margin-bottom:0">
+            <div class="card-head">
+              <div>
+                <h2>试判输入</h2>
+                <p>Ctrl / ⌘ + Enter 快速执行</p>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="field">
+                <div class="field-head">
+                  <label class="field-label" for="try-input">待判定的消息</label>
+                  <span class="field-hint">例如「怎么安装 Docker？」</span>
+                </div>
+                <textarea class="textarea" id="try-input" rows="3" placeholder="输入一条群聊消息，试试 TypeSafe 会怎么判"></textarea>
+              </div>
+
+              <div style="margin-top:16px">
+                <div class="field-head" style="margin-bottom:8px">
+                  <span class="field-label">模拟上下文（可选）</span>
+                  <span class="field-hint">最多 10 条，用于验证上下文对判定的影响</span>
+                </div>
+                <div id="try-recent"></div>
+                <button class="btn btn-ghost btn-sm" type="button" id="try-add-recent" style="margin-top:8px">添加一条上下文</button>
+              </div>
+
+              <button class="btn btn-primary" type="button" id="try-btn" style="margin-top:16px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M5 12h13M13 6.5l5.5 5.5L13 17.5"></path>
+                </svg>
+                开始试判
+              </button>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:0">
+            <div class="card-head">
+              <div>
+                <h2>结构化裁决结果</h2>
+                <p>逐闸门展示判定链路</p>
+              </div>
+            </div>
+            <div class="card-body">
+              <div id="try-result"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
+<script src="./js/data.js"></script>
+<script src="./js/config.js"></script>
+<script src="./js/views.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>

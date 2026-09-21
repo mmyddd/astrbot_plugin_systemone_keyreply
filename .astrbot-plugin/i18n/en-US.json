@@ -1,0 +1,11 @@
+{
+  "metadata": {
+    "display_name": "TypeSafe Auto Reply"
+  },
+  "pages": {
+    "typesafe-console": {
+      "title": "TypeSafe Console",
+      "desc": "Edit decision and reply policies, inspect runtime status, and try message intent live."
+    }
+  }
+}

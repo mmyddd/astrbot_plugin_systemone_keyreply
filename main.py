@@ -1,5 +1,6 @@
 import logging
 import sys
+import time
 import asyncio
 import re
 from pathlib import Path
@@ -58,6 +59,131 @@ logger = logging.getLogger("astrbot")
 
 
 CQ_IMAGE_REGEX = re.compile(r"\[CQ:image,[^\]]*?(?:url|file)=([^,\]]+)", re.IGNORECASE)
+
+
+# ═══════════════════════════════════════════════════════════════
+# WebUI 配置中心：可编辑字段白名单与取值归一化
+# 页面与 _conf_schema.json 共用同一份 AstrBot 配置，字段名与默认值保持一致。
+# ═══════════════════════════════════════════════════════════════
+
+SECRET_MASK = "********"
+SECRET_FIELDS = ("typesafe_api_key",)
+
+_EDITABLE_LIST_FIELDS = (
+    "allowed_reply_types",
+    "bot_aliases",
+    "session_whitelist",
+    "session_blacklist",
+    "user_whitelist",
+    "user_blacklist",
+    "force_reply_keywords",
+    "ignore_keywords",
+)
+
+_EDITABLE_TEXT_FIELDS = (
+    "typesafe_api_key",
+    "typesafe_model",
+    "typesafe_custom_model",
+    "failure_mode",
+    "min_confidence",
+    "model_mode",
+    "custom_provider_id",
+    "reply_length_mode",
+    "reply_style",
+    "custom_prompt",
+    "reply_delay_mode",
+    "at_bot_mode",
+    "filter_mode",
+    "force_reply_mode",
+    "force_trigger_regex",
+    "ignore_regex",
+)
+
+_EDITABLE_BOOL_FIELDS = (
+    "enable_plugin",
+    "enable_group",
+    "enable_private",
+    "enable_reply_delay",
+    "detect_bot_name",
+    "ignore_commands",
+    "ignore_bots",
+    "ignore_pure_media",
+    "enable_cache",
+    "debug_log",
+)
+
+_EDITABLE_INT_FIELDS = (
+    "typesafe_timeout",
+    "max_chars",
+    "reply_delay_min",
+    "reply_delay_max",
+    "reply_delay_fixed",
+    "context_message_count",
+    "session_cooldown",
+    "user_cooldown",
+    "max_continuous_replies",
+    "reply_probability",
+    "min_message_length",
+    "max_message_length",
+    "rate_limit_per_minute",
+    "cache_ttl",
+)
+
+
+def _as_list(raw: object) -> list:
+    """把任意输入归一化为列表（兼容换行/逗号分隔的字符串）。"""
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple, set)):
+        return list(raw)
+    if isinstance(raw, str):
+        text = raw.replace("\r\n", "\n").replace(",", "\n").replace("，", "\n")
+        return [line.strip() for line in text.split("\n") if line.strip()]
+    return [raw]
+
+
+def _as_text_list(raw: object) -> list:
+    """去空白、去重且保持原顺序的字符串列表。"""
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in _as_list(raw):
+        text = str(item).strip()
+        if text and text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
+
+
+def _as_int(raw: object, default: int) -> int:
+    try:
+        return int(float(str(raw).strip()))
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_float(raw: object, default: float) -> float:
+    try:
+        return float(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_bool(raw: object) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return bool(raw)
+    return str(raw).strip().lower() in ("1", "true", "yes", "on", "是", "开启", "启用")
+
+
+def _mask_secret(value: object) -> str:
+    """API Key 掩码：保留前 4 位与后 4 位，中间用掩码替换。"""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) <= 8:
+        return SECRET_MASK
+    return f"{text[:4]}{SECRET_MASK}{text[-4:]}"
 
 
 @register(
@@ -262,6 +388,9 @@ class TypeSafeAutoReplyPlugin(Star):
         self.context_manager = ContextManager(max_history_per_session=20)
         self.cooldown_tracker = CooldownTracker()
         self.filter = MessageFilter()
+
+        # 10. WebUI 配置中心（Dashboard 插件页）后端路由
+        self._register_web_apis()
 
         logger.info(
             f"[TypeSafe] 插件已加载. 启用状态: {self.enable_plugin}, "
@@ -762,6 +891,391 @@ class TypeSafeAutoReplyPlugin(Star):
             "=================================="
         )
         yield event.plain_result(result_text)
+
+    # ═══════════════════════════════════════════════════════════
+    # WebUI 配置中心（Dashboard 插件页）
+    # ═══════════════════════════════════════════════════════════
+
+    def _register_web_apis(self):
+        """注册配置中心所需的全部 Web API 路由。
+
+        页面通过 window.AstrBotPluginPage.apiGet("config/get") 调用，
+        Dashboard 会转发到 /api/plug/astrbot_plugin_typesafe_autoreply/config/get。
+        """
+        plugin_name = "astrbot_plugin_typesafe_autoreply"  # 与 metadata.yaml 的 name 一致
+        routes = (
+            ("console/config", self._api_config_get, ["GET"], "读取插件配置（密钥已掩码）"),
+            ("console/config/update", self._api_config_update, ["POST"], "更新插件配置并重载"),
+            ("console/config/reset", self._api_config_reset, ["POST"], "将选中字段恢复为默认值"),
+            ("console/status", self._api_status, ["GET"], "读取运行状态与生效规则"),
+            ("console/try", self._api_try, ["POST"], "在线试判一条消息"),
+            ("console/probe", self._api_probe, ["POST"], "测试 TypeSafe API 连通性"),
+        )
+        for path, handler, methods, desc in routes:
+            try:
+                self.context.register_web_api(
+                    f"/{plugin_name}/{path}", handler, methods, desc
+                )
+            except Exception as e:  # 老版本 AstrBot 不支持插件页时不影响插件主体
+                logger.warning(f"[TypeSafe] 注册 Web API {path} 失败: {e}")
+
+    def _plugin_config_object(self):
+        """拿到 AstrBot 持有的 AstrBotConfig（非副本），拿不到时退回实例配置。"""
+        try:
+            from astrbot.core.star.star import star_registry
+
+            for plugin_md in star_registry:
+                if plugin_md.name == "astrbot_plugin_typesafe_autoreply":
+                    if plugin_md.config:
+                        return plugin_md.config
+                    break
+        except Exception:
+            pass
+        return self.config
+
+    async def _save_and_reload_plugin(self) -> bool:
+        """持久化配置并尝试热重载插件，返回是否重载成功。"""
+        config_obj = self._plugin_config_object()
+        try:
+            config_obj.save_config()
+        except Exception as e:
+            logger.warning(f"[TypeSafe] 配置保存失败: {e}")
+            return False
+
+        try:
+            if hasattr(self.context, "reload_plugin"):
+                await self.context.reload_plugin("astrbot_plugin_typesafe_autoreply")
+                return True
+            if hasattr(self.context, "_star_manager"):
+                await self.context._star_manager.reload("astrbot_plugin_typesafe_autoreply")
+                return True
+        except Exception as e:
+            logger.warning(f"[TypeSafe] 插件重载失败: {e}")
+            return False
+
+        logger.warning("[TypeSafe] 找不到 reload 方法，配置已保存但需手动重载插件")
+        return False
+
+    def _audit_config_summary(self) -> dict:
+        """供页面展示的配置摘要（不含任何密钥明文）。"""
+        return {
+            "enable_plugin": bool(self.enable_plugin),
+            "enable_group": bool(self.enable_group),
+            "enable_private": bool(self.enable_private),
+            "configured": self.typesafe_client.is_configured(),
+            "model": self.typesafe_model,
+            "reply_style": self.reply_style,
+            "reply_length_mode": self.reply_length_mode,
+            "min_confidence": self.min_confidence,
+            "at_bot_mode": self.at_bot_mode,
+            "allowed_reply_types": list(self.allowed_reply_types),
+        }
+
+    async def _api_config_get(self) -> dict:
+        """返回当前插件配置（API Key 已掩码）。"""
+        config_obj = self._plugin_config_object()
+        try:
+            raw = dict(config_obj)
+        except Exception:
+            raw = dict(self.config)
+
+        for field in SECRET_FIELDS:
+            if field in raw:
+                raw[field] = _mask_secret(raw.get(field))
+
+        raw["_summary"] = self._audit_config_summary()
+        return raw
+
+    async def _api_config_update(self):
+        """按白名单合并配置：页面没提交的字段保持原值。"""
+        from quart import request
+
+        payload = await request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or not payload:
+            return {"message": "empty config"}, 400
+
+        config_obj = self._plugin_config_object()
+        updated: list[str] = []
+
+        for field in _EDITABLE_LIST_FIELDS:
+            if field in payload:
+                config_obj[field] = _as_text_list(payload[field])
+                updated.append(field)
+
+        for field in _EDITABLE_TEXT_FIELDS:
+            if field not in payload:
+                continue
+            value = str(payload[field] or "").strip()
+            # 掩码回传 = 不修改，避免把 ******** 写进配置
+            if field in SECRET_FIELDS and SECRET_MASK in value:
+                continue
+            config_obj[field] = value
+            updated.append(field)
+
+        for field in _EDITABLE_BOOL_FIELDS:
+            if field in payload:
+                config_obj[field] = _as_bool(payload[field])
+                updated.append(field)
+
+        for field in _EDITABLE_INT_FIELDS:
+            if field in payload:
+                config_obj[field] = _as_int(
+                    payload[field], _as_int(self.config.get(field, 0), 0)
+                )
+                updated.append(field)
+
+        if not updated:
+            return {"message": "no editable field in payload"}, 400
+
+        reloaded = await self._save_and_reload_plugin()
+        return {
+            "message": "ok",
+            "updated": updated,
+            "reloaded": reloaded,
+            "config": self._audit_config_summary(),
+        }
+
+    async def _api_config_reset(self):
+        """把选中字段恢复为 _conf_schema.json 中的默认值。"""
+        from quart import request
+
+        payload = await request.get_json(silent=True) or {}
+        fields = _as_list(payload.get("fields"))
+        if not fields:
+            return {"message": "no field selected"}, 400
+
+        defaults = self._schema_defaults()
+        known = (
+            set(_EDITABLE_LIST_FIELDS)
+            | set(_EDITABLE_TEXT_FIELDS)
+            | set(_EDITABLE_BOOL_FIELDS)
+            | set(_EDITABLE_INT_FIELDS)
+        )
+        config_obj = self._plugin_config_object()
+        updated: list[str] = []
+        for field in fields:
+            name = str(field).strip()
+            if name not in known or name not in defaults:
+                continue
+            value = defaults[name]
+            config_obj[name] = list(value) if isinstance(value, list) else value
+            updated.append(name)
+
+        if not updated:
+            return {"message": "no valid field to reset"}, 400
+
+        reloaded = await self._save_and_reload_plugin()
+        return {
+            "message": "ok",
+            "updated": updated,
+            "reloaded": reloaded,
+            "config": self._audit_config_summary(),
+        }
+
+    @staticmethod
+    def _schema_defaults() -> dict:
+        """读取 _conf_schema.json 中声明的默认值。"""
+        import json
+        from pathlib import Path
+
+        path = Path(__file__).parent / "_conf_schema.json"
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                schema = json.load(fh)
+        except Exception as e:
+            logger.warning(f"[TypeSafe] 读取 _conf_schema.json 失败: {e}")
+            return {}
+        return {
+            key: item.get("default")
+            for key, item in schema.items()
+            if isinstance(item, dict) and "default" in item
+        }
+
+    async def _api_status(self) -> dict:
+        """运行状态快照：等价于 /typesafe_status 指令的结构化版本。"""
+        at_bot_mode_desc = {
+            "bypass_typesafe": "忽略 TypeSafe AI (直接调用 LLM 回复)",
+            "use_typesafe": "使用 TypeSafe AI 判定",
+            "pass_to_astrbot": "不处理 (交由 AstrBot 原生处理)",
+        }.get(self.at_bot_mode, self.at_bot_mode)
+
+        delay_info = {
+            "enabled": bool(self.enable_reply_delay),
+            "mode": self.reply_delay_mode,
+            "min": self.reply_delay_min,
+            "max": self.reply_delay_max,
+            "fixed": self.reply_delay_fixed,
+        }
+
+        try:
+            active = len(getattr(self.context_manager, "_history", {}) or {})
+        except Exception:
+            active = 0
+
+        return {
+            "version": "1.0.5",
+            "enable_plugin": bool(self.enable_plugin),
+            "enable_group": bool(self.enable_group),
+            "enable_private": bool(self.enable_private),
+            "api_configured": self.typesafe_client.is_configured(),
+            "model": self.typesafe_model,
+            "model_raw": self.typesafe_model_raw,
+            "custom_model": self.typesafe_custom_model,
+            "timeout": self.typesafe_client.timeout,
+            "failure_mode": self.failure_mode,
+            "at_bot_mode": self.at_bot_mode,
+            "at_bot_mode_desc": at_bot_mode_desc,
+            "min_confidence": self.min_confidence,
+            "reply_probability": self.reply_probability,
+            "reply_style": self.reply_style,
+            "reply_length_mode": self.reply_length_mode,
+            "max_chars": self.max_chars,
+            "model_mode": self.model_mode,
+            "custom_provider_id": self.custom_provider_id or "",
+            "delay": delay_info,
+            "session_cooldown": self.session_cooldown,
+            "user_cooldown": self.user_cooldown,
+            "max_continuous_replies": self.max_continuous_replies,
+            "filter_mode": self.filter_mode,
+            "allowed_reply_types": [
+                REPLY_TYPE_NAMES.get(t, t) for t in self.allowed_reply_types
+            ],
+            "context_message_count": self.context_message_count,
+            "rate_limit_per_minute": getattr(
+                self.typesafe_client.rate_limiter, "limit_per_minute", 0
+            ),
+            "rate_limit_used": self.typesafe_client.rate_limiter.current_load(),
+            "cache_enabled": bool(self.enable_cache),
+            "cache_ttl": self.cache_ttl,
+            "cache_size": len(getattr(self.typesafe_client.cache, "_cache", {}))
+            if getattr(self.typesafe_client, "cache", None)
+            else 0,
+            "debug_log": bool(self.debug_log),
+            "active_sessions": active,
+            "detect_bot_name": bool(self.detect_bot_name),
+            "bot_aliases": list(self.bot_aliases),
+            "force_reply_mode": self.force_reply_mode,
+            "force_trigger_regex": self.force_trigger_regex,
+            "ignore_regex": self.ignore_regex,
+            "regex_ok": {
+                "force_trigger": bool(self.force_trigger_regex_pattern)
+                or not (self.force_trigger_regex or "").strip(),
+                "ignore": bool(self.ignore_regex_pattern)
+                or not (self.ignore_regex or "").strip(),
+            },
+        }
+
+    async def _api_try(self):
+        """在线试判：等价于 /typesafe_test 指令的 JSON 版本，不触发真实回复。"""
+        from quart import request
+
+        payload = await request.get_json(silent=True) or {}
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return {"ok": False, "message": "请输入要试判的消息内容"}, 400
+
+        if not self.typesafe_client.is_configured():
+            return {"ok": False, "message": "TypeSafe API Key 尚未配置，无法试判"}, 400
+
+        # 可选：附带最近 N 条模拟上下文，验证上下文对判定的影响
+        recent: list[dict] = []
+        raw_recent = payload.get("recent")
+        if isinstance(raw_recent, list):
+            for item in raw_recent[:10]:
+                if isinstance(item, dict) and str(item.get("text") or "").strip():
+                    recent.append(
+                        {
+                            "sender": str(item.get("sender") or "群友").strip(),
+                            "text": str(item.get("text")).strip(),
+                        }
+                    )
+
+        sender = str(payload.get("sender") or "测试用户").strip() or "测试用户"
+        state = {
+            "recent_chat": recent,
+            "current_message": {"sender": sender, "text": text},
+        }
+
+        started = time.perf_counter()
+        try:
+            decision = await self.classifier.classify_message(state)
+        except Exception as e:
+            logger.error(f"[TypeSafe] 在线试判失败: {e}", exc_info=True)
+            return {"ok": False, "message": f"试判失败: {e}"}, 500
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+
+        allowed = MessageClassifier.is_reply_type_allowed(
+            decision.reply_type, self.allowed_reply_types
+        )
+        confidence_ok = MessageClassifier.is_confidence_sufficient(
+            decision.confidence_level, self.min_confidence
+        )
+        type_display = decision.reply_type_display
+
+        reasons: list[str] = []
+        if decision.is_fallback:
+            reasons.append("TypeSafe 判定失败，已按降级策略给出兜底结论")
+        if not decision.should_reply:
+            reasons.append("TypeSafe 判定无需主动回复")
+        else:
+            if not allowed:
+                reasons.append(
+                    f"意图「{type_display}」未包含在允许回复列表中，实际会被静默"
+                )
+            if not confidence_ok:
+                reasons.append(
+                    f"置信度「{decision.confidence_level}」未达到阈值「{self.min_confidence}」"
+                )
+        would_reply = bool(
+            decision.should_reply
+            and allowed
+            and confidence_ok
+            and not decision.is_fallback
+        )
+
+        return {
+            "ok": True,
+            "text": text,
+            "model": self.typesafe_model,
+            "elapsed_ms": round(elapsed_ms, 1),
+            "should_reply": decision.should_reply,
+            "reply_type": decision.reply_type,
+            "reply_type_display": type_display,
+            "confidence_level": decision.confidence_level,
+            "confidence_score": round(float(decision.confidence_score), 4),
+            "urgency": decision.urgency,
+            "reason": decision.reason,
+            "is_fallback": bool(decision.is_fallback),
+            "type_allowed": bool(allowed),
+            "confidence_ok": bool(confidence_ok),
+            "would_reply": would_reply,
+            "verdicts": reasons,
+            "gates": {
+                "allowed_types": [
+                    REPLY_TYPE_NAMES.get(t, t) for t in self.allowed_reply_types
+                ],
+                "min_confidence": self.min_confidence,
+                "reply_probability": self.reply_probability,
+                "context_message_count": self.context_message_count,
+            },
+        }
+
+    async def _api_probe(self):
+        """一键测试 TypeSafe API 连通性。"""
+        if not self.typesafe_client:
+            return {"ok": False, "message": "客户端未初始化"}, 500
+
+        started = time.perf_counter()
+        result = await self.typesafe_client.test_api_connection()
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        return {
+            "ok": bool(result.get("ok")),
+            "message": result.get("message", ""),
+            "model": self.typesafe_model,
+            "raw_model": getattr(result.get("data"), "model", None),
+            "elapsed_ms": round(elapsed_ms, 1),
+            "rate_limit_used": self.typesafe_client.rate_limiter.current_load(),
+        }
 
     async def terminate(self):
         """插件卸载或停用时的资源释放"""
