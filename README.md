@@ -39,7 +39,7 @@
 - **一个答案只写一次**，可以在它下面挂多个问法（多 Q 一 A）。例：`金锭` / `金锭怎么获得` / `金锭怎么做` 共用同一份答案与说明。
 - **每个群、每个私聊可拥有独立问答表**；未单独配置的会话回退到全局默认表。
 - **一张表可同时服务多个群**（多群一域），便于按群组分批管理。
-- **一键复制 KeyReply 问答表**：自动探测 KeyReply 的 `triggers.yml`」并复制到本插件自己的数据目录，之后不再依赖对方。
+- **一键复制 KeyReply 问答表**：自动探测 KeyReply 的 `triggers.yml` 并复制到本插件自己的数据目录，之后不再依赖对方。
 
 ### 🖼️ 图片答案
 
@@ -118,12 +118,6 @@ pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
 ```
 重启 AstrBot 即可。本插件仅依赖 `typesafe-sdk`。
 
-> [!IMPORTANT]
-> 插件标识为 `astrbot_plugin_typesafe_keyreply`（以 `metadata.yaml` 的 `name` 为准）。
-> 从旧版 `astrbot_plugin_typesafe_autoreply` 升级时，**插件目录名会随之改变**，
-> 请同时把问答表数据从 `data/plugin_data/astrbot_plugin_typesafe_autoreply/`
-> 移动到 `data/plugin_data/astrbot_plugin_typesafe_keyreply/`，否则页面会显示空问答表。
-
 ---
 
 ## 快速上手
@@ -199,15 +193,7 @@ pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
 | 问答表 | `data/plugin_data/astrbot_plugin_typesafe_keyreply/qa_tables.json` |
 | KeyReply 来源文件（只读探测） | `data/plugins/keyword_reply/triggers.yml` |
 
-问答表使用 JSON 存储，支持全局默认表、按群独立表与按私聊独立表三级作用域。旧版本的单 `scope_id` 数据可被直接读取，无需迁移。
-
-> [!NOTE]
-> 数据目录以插件标识命名。从旧版 `astrbot_plugin_typesafe_autoreply` 升级时目录名会变化，
-> 直接移动整个目录即可完成数据迁移：
-> ```bash
-> mv data/plugin_data/astrbot_plugin_typesafe_autoreply \
->    data/plugin_data/astrbot_plugin_typesafe_keyreply
-> ```
+问答表使用 JSON 存储，支持全局默认表、按群独立表与按私聊独立表三级作用域。
 
 ---
 
@@ -219,6 +205,38 @@ pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
 > 3. **通配符要写准**：`%` 代表任意内容。Q 写 `金锭%` 能命中「金锭怎么做」，但若写成 `金%`，则「今天金价」也会被召回——虽然 Jev 会判为假命中而静默，但仍会消耗一次判定额度。
 > 4. **善用附加判定增强**：当某个词容易被误命中时，在答案下补一句语境说明（如「该回答适合用户询问金锭怎么做的语境」），Jev 的判断会明显更准。
 > 5. **确定性问答关掉判定**：像「服务器 IP」这种不需要区分的问答对，设为「直接回复」可完全省掉 Jev 调用。
+
+---
+
+## 致谢与来源声明
+
+本插件建立在两个开源项目之上，在此向原作者致谢。
+
+### 一、关键词回复插件 KeyReply
+
+- **项目**：[zgojin/astrbot_plugin_KeyReply](https://github.com/zgojin/astrbot_plugin_KeyReply)
+- **作者**：长安某
+- **本插件使用到的部分**：
+  - 问答对的**存储结构**（问题与答案成对保存）；
+  - 问题匹配的 **`%` 通配符语义**（`%` 代表任意内容，其余字符按字面量匹配）；
+  - 基于问题匹配直接回复固定答案的**基础行为**。
+- **说明**：本插件保留了「正则命中即回复固定答案」的能力（对应每条问答对的「直接回复」模式），
+  并在其之上增加了 Jev 相关性判定、答案为中心的组织方式、多群一域与 WebUI 管理界面。
+  导入历史数据时直接读取 KeyReply 的 `triggers.yml`，但**不会修改或写入**该文件。
+
+### 二、TypeSafe 智能自动回复插件
+
+- **项目**：`astrbot_plugin_typesafe_autoreply`（本仓库的前身，MIT 协议）
+- **作者**：baibaibai、xiaobai
+- **本插件使用到的部分**：
+  - 插件骨架与运行时模块（`main.py`、`utils.py`、`filters.py`、`context_manager.py` 等）；
+  - **TypeSafe AI（Jev System One）** 的接入与故障降级、限流、缓存等容错机制；
+  - 防刷屏与频控体系（会话/用户冷却、最大连续回复次数、黑白名单、消息卫生过滤）；
+  - 回复风格与长度定制、模拟真人延时、`/typesafe_status` 与 `/typesafe_test` 指令。
+
+> [!NOTE]
+> 上述两个项目的原版权声明均保留在 [LICENSE](LICENSE) 中：
+> `Copyright (c) 2026 baibaibai`。
 
 ---
 

@@ -197,11 +197,15 @@ def _mask_secret(value: object) -> str:
     return f"{text[:4]}{SECRET_MASK}{text[-4:]}"
 
 
+# 插件版本：@register 与状态 API 共用同一来源，避免两处不一致
+PLUGIN_VERSION = "1.0.0"
+
+
 @register(
     "astrbot_plugin_typesafe_keyreply",
     "AstrBot & TypeSafe Community",
-    "使用 TypeSafe AI 判断聊天消息是否需要 AI 主动参与，并调用 AstrBot 已配置的大语言模型生成自然回复。",
-    "1.0.5",
+    "固定问答表驱动的自动回复插件。消息先经本地正则召回，命中后由 TypeSafe AI 判定是否真提问，再回复标准答案。",
+    PLUGIN_VERSION,
     "https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply",
 )
 class TypeSafeAutoReplyPlugin(Star):
@@ -1032,7 +1036,7 @@ class TypeSafeAutoReplyPlugin(Star):
             active = 0
 
         return {
-            "version": "1.0.5",
+            "version": PLUGIN_VERSION,
             "enable_plugin": bool(self.enable_plugin),
             "enable_group": bool(self.enable_group),
             "enable_private": bool(self.enable_private),

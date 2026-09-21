@@ -1,6 +1,6 @@
 name: astrbot_plugin_typesafe_keyreply
-desc: 使用 TypeSafe AI 判断聊天消息是否需要 AI 主动参与，并调用 AstrBot 已配置的大语言模型生成自然回复。
+desc: 固定问答表驱动的自动回复插件。消息先经本地正则召回，命中后由 TypeSafe AI 判定是否真提问，再回复标准答案。
 help: https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply
-version: v1.0.5
+version: v1.0.0
 author: AstrBot & TypeSafe Community
 repo: https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply
