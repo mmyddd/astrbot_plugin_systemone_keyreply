@@ -26,14 +26,47 @@
     return { scope: t.scope, scope_id: t.scope_id, key: t.key };
   }
 
-  /** 折叠态展示的答案摘要：纯图片答案也要正确呈现，不能显示成「未填写」 */
+  /** 折叠态展示的答案摘要：图片由缩略图承载，这里只描述文本部分 */
   function answerSummaryOf(row) {
     const text = String(row.answerText || '').trim();
     const images = format.lines(row.answerImages);
-    if (text && images.length) return text + '  🖼 ' + images.length + ' 张图';
     if (text) return text;
-    if (images.length) return '🖼 ' + images.length + ' 张图片';
+    if (images.length) return '（图片答案）';
     return '（未填写答案）';
+  }
+
+  /**
+   * 折叠态的极小缩略图。
+   * 图片无法加载时（外链失效或页面 CSP 限制）退化为可点击的链接文字，
+   * 避免留下一张破图；多条图片时角标显示剩余数量。
+   */
+  function answerThumb(row) {
+    const images = format.lines(row.answerImages);
+    if (!images.length) return null;
+    const url = images[0];
+
+    const link = el('a', 'qa-thumb');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noreferrer noopener';
+    link.title = images.length > 1 ? url + ' （共 ' + images.length + ' 张）' : url;
+
+    const img = el('img', 'qa-thumb-img');
+    img.src = url;
+    img.alt = '图片答案';
+    img.loading = 'lazy';
+    img.referrerPolicy = 'no-referrer';
+    img.addEventListener('error', () => {
+      link.textContent = '';
+      link.classList.add('is-broken');
+      link.appendChild(el('span', 'qa-thumb-fallback', '图片链接'));
+    });
+    link.appendChild(img);
+
+    if (images.length > 1) {
+      link.appendChild(el('span', 'qa-thumb-more', '+' + (images.length - 1)));
+    }
+    return link;
   }
 
   function tableIcon(t) {
@@ -188,6 +221,10 @@
     texts.appendChild(qSpan);
     texts.appendChild(aSpan);
     summary.appendChild(texts);
+
+    const thumb = answerThumb(row);
+    if (thumb) summary.appendChild(thumb);
+
     summary.appendChild(el('span', 'qa-item-chevron'));
     item.appendChild(summary);
 

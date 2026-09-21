@@ -629,6 +629,40 @@ svg { display: block; width: 100%; height: 100%; }
 }
 .modal-foot-right { margin-left: auto; display: flex; gap: 8px; }
 
+
+/* ── 折叠态缩略图 ───────────────────────────────────────── */
+.qa-thumb {
+  flex: none; position: relative;
+  display: block;
+  width: 30px; height: 30px;
+  border-radius: var(--r-xs);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  background: var(--card-sunken);
+  transition: border-color .14s ease, transform .14s ease;
+}
+.qa-thumb:hover { border-color: var(--brand); transform: scale(1.06); }
+
+.qa-thumb-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* 加载失败退化为文字链接，不留破图 */
+.qa-thumb.is-broken {
+  width: auto; height: 22px; padding: 0 7px;
+  display: inline-flex; align-items: center;
+  border-style: dashed;
+}
+.qa-thumb-fallback { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.qa-thumb.is-broken:hover .qa-thumb-fallback { color: var(--brand); }
+
+/* 多图角标 */
+.qa-thumb-more {
+  position: absolute; right: 0; bottom: 0;
+  padding: 0 3px;
+  border-top-left-radius: var(--r-xs);
+  background: rgba(15, 21, 32, .72);
+  color: #fff; font-size: 9.5px; line-height: 1.5; font-weight: 600;
+}
+
 /* ── 响应式 ─────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

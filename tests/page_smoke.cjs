@@ -36,16 +36,41 @@ function makeEl(tag) {
   const node = {
     tagName: String(tag || 'div').toUpperCase(),
     children: [], attrs: {}, dataset: {}, style: {},
-    textContent: '', innerHTML: '', value: '', checked: false, type: '',
-    id: '', className: '', placeholder: '', rows: 0, disabled: false, parentNode: null,
+    innerHTML: '', value: '', checked: false, type: '',
+    id: '', placeholder: '', rows: 0, disabled: false, parentNode: null,
+    _classes: new Set(),
+    // className 与 classList 共享同一份状态，否则测试会看到不一致的结果
+    get className() { return Array.from(this._classes).join(' '); },
+    set className(v) {
+      this._classes = new Set(String(v || '').split(/\s+/).filter(Boolean));
+    },
+    get textContent() {
+      let out = this._text || '';
+      for (const c of this.children) out += c.textContent || '';
+      return out;
+    },
+    set textContent(v) {
+      this._text = v === undefined || v === null ? '' : String(v);
+      // 复刻浏览器行为：设置 textContent 会清空子节点
+      for (const c of this.children) c.parentNode = null;
+      this.children = [];
+    },
     classList: {
-      _s: new Set(), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); },
-      contains(c) { return this._s.has(c); },
-      toggle(c, f) { if (f === undefined) { this._s.has(c) ? this._s.delete(c) : this._s.add(c); } else if (f) { this._s.add(c); } else { this._s.delete(c); } }
+      _owner: null,
+      add(c) { this._owner._classes.add(c); },
+      remove(c) { this._owner._classes.delete(c); },
+      contains(c) { return this._owner._classes.has(c); },
+      toggle(c, f) {
+        if (f === undefined) { this._owner._classes.has(c) ? this._owner._classes.delete(c) : this._owner._classes.add(c); }
+        else if (f) { this._owner._classes.add(c); }
+        else { this._owner._classes.delete(c); }
+      }
     },
     appendChild(c) { this.children.push(c); if (c) c.parentNode = this; return c; },
     removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); return c; },
     remove() { if (this.parentNode) this.parentNode.removeChild(this); },
+    // 事件注册记录在 _ev，便于测试直接触发
+    _ev: null,
     focus() {}, click() {},
     setAttribute(k, v) { this.attrs[k] = v; if (k === 'id') this.id = v; },
     removeAttribute(k) { delete this.attrs[k]; }, getAttribute(k) { return this.attrs[k]; },
@@ -55,6 +80,7 @@ function makeEl(tag) {
     querySelectorAll(sel) { return descendants(this).filter(n => matchSel(n, sel)); }
   };
   function descendants(n) { const out = []; const walk = x => { for (const c of x.children) { out.push(c); walk(c); } }; walk(n); return out; }
+  node.classList._owner = node;
   return node;
 }
 
@@ -170,7 +196,11 @@ const qaFixture = () => ({
       ]},
     { key: 'group:111', scope: 'group', scope_id: '111', ids: ['111', '222'], name: '技术群组',
       label: '技术群组',
-      entries: [{ question: '群专属问题', answer: { text: '群专属答案', images: [] }, enabled: true }]},
+      entries: [
+        { question: '群专属问题', answer: { text: '群专属答案', images: [] }, enabled: true },
+        { question: '图片问题', answer: { text: '', images: ['https://example.test/a.jpg'] }, enabled: true },
+        { question: '多图问题', answer: { text: '', images: ['https://example.test/a.jpg', 'https://example.test/b.jpg'] }, enabled: true }
+      ]},
     { key: 'group:333', scope: 'group', scope_id: '333', ids: ['333'], name: '',
       label: '群聊表 · 333',
       entries: [] }
@@ -239,6 +269,55 @@ t('qa 打开群配置弹窗', () => {
   const idsHost = hosts['#qa-cfg-ids'];
   if (!idsHost.children.length) throw new Error('未渲染 ID 列表');
   TS.qa.closeTableConfig();
+});
+
+t('qa 图片答案渲染极小缩略图', () => {
+  TS.state.qaTableKey = 'group:111';
+  TS.qa.loadDraft();
+  const nodes = [];
+  const walk = n => { for (const c of n.children) { nodes.push(c); walk(c); } };
+  walk(hosts['#qa-rows']);
+
+  const thumbs = nodes.filter(n => String(n.className || '').indexOf('qa-thumb') >= 0);
+  if (thumbs.length < 2) throw new Error('期望至少 2 个缩略图，实际 ' + thumbs.length);
+
+  const first = thumbs[0];
+  if (first.tagName !== 'A') throw new Error('缩略图应是链接，实际 ' + first.tagName);
+  if (first.href !== 'https://example.test/a.jpg') throw new Error('缩略图 href 不正确：' + first.href);
+  const img = first.children.find(c => c.tagName === 'IMG');
+  if (!img) throw new Error('缩略图缺少 img 元素');
+  if (img.src !== 'https://example.test/a.jpg') throw new Error('img.src 不正确：' + img.src);
+
+  // 多图应有 +N 角标
+  const more = thumbs.filter(t => t.children.some(c => String(c.className || '').indexOf('qa-thumb-more') >= 0));
+  if (!more.length) throw new Error('多图未显示剩余数量角标');
+});
+
+t('qa 缩略图加载失败退化为链接文字', () => {
+  const nodes = [];
+  const walk = n => { for (const c of n.children) { nodes.push(c); walk(c); } };
+  walk(hosts['#qa-rows']);
+  const thumb = nodes.filter(n => String(n.className || '').indexOf('qa-thumb') >= 0)[0];
+  const img = thumb.children.find(c => c.tagName === 'IMG');
+  if (!img || !img._ev || !img._ev.error) throw new Error('缩略图未注册 error 回退处理');
+  // 触发加载失败
+  img._ev.error({});
+  if (String(thumb.className).indexOf('is-broken') < 0) throw new Error('加载失败后未标记 is-broken');
+  const fb = thumb.children.find(c => String(c.className || '').indexOf('qa-thumb-fallback') >= 0);
+  if (!fb) throw new Error('加载失败后未显示链接文字回退');
+  if (thumb.children.some(c => c.tagName === 'IMG')) throw new Error('加载失败后仍保留破图元素');
+});
+
+t('qa 无图答案不渲染缩略图', () => {
+  TS.state.qaTableKey = 'global';
+  TS.qa.loadDraft();
+  const nodes = [];
+  const walk = n => { for (const c of n.children) { nodes.push(c); walk(c); } };
+  walk(hosts['#qa-rows']);
+  const thumbs = nodes.filter(n => String(n.className || '').indexOf('qa-thumb') >= 0);
+  if (thumbs.length) throw new Error('无图答案不应出现缩略图，实际 ' + thumbs.length);
+  TS.state.qaTableKey = 'group:111';
+  TS.qa.loadDraft();
 });
 
 t('qa 表格子不是 label（否则点任意位置会触发 ⋯ 按钮）', () => {
