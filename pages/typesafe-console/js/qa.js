@@ -259,10 +259,15 @@
     host.textContent = '';
     const cands = state.qa.import_candidates || [];
     if (cands.length) {
-      host.appendChild(el('span', 'field-meta', '已探测到 KeyReply 数据文件：' + cands[0]));
+      host.appendChild(el('span', null, '已探测到 ' + cands[0]));
     } else {
-      host.appendChild(el('span', 'field-meta',
-        '未自动探测到 KeyReply 的 triggers.yml，可在下方手动填写完整路径。'));
+      const warn = el('span', null, '未探测到 KeyReply 数据文件，可点「手动指定路径」填写 triggers.yml 的位置');
+      warn.style.color = 'var(--warning)';
+      host.appendChild(warn);
+    }
+    if (state.qa.data_file) {
+      host.appendChild(el('br'));
+      host.appendChild(el('span', 'field-meta', '本插件数据文件：' + state.qa.data_file));
     }
     const input = $('#qa-import-path');
     if (input && !input.value) input.value = state.qa.configured_import_path || (cands[0] || '');
@@ -292,6 +297,14 @@
 
   async function importFromKeyReply() {
     const pathInput = $('#qa-import-path');
+    const replaceBox = $('#qa-import-replace');
+    const path = pathInput ? pathInput.value.trim() : '';
+    const replace = Boolean(replaceBox && replaceBox.checked);
+
+    if (replace && !window.confirm('覆盖模式会用 KeyReply 的问答表整体替换当前作用域的内容，确定继续？')) {
+      return;
+    }
+
     const btn = $('#qa-import-btn');
     if (btn) btn.classList.add('is-busy');
     try {
@@ -299,18 +312,50 @@
       const result = await TS.api.qaImport({
         scope: s.scope,
         scope_id: s.scope_id,
-        path: pathInput ? pathInput.value.trim() : ''
+        path: path,
+        replace: replace
       });
       if (result && result.ok) {
-        TS.toast(result.message || '导入完成', 'ok');
+        state.qaDirty = false;
+        TS.toast(result.message || '复制完成', 'ok');
         await load();
+        renderImportResult(result);
       } else {
-        TS.toast((result && result.message) || '导入失败', 'err');
+        TS.toast((result && result.message) || '复制失败', 'err');
+        renderImportResult(result || {});
       }
     } catch (error) {
-      TS.toast('导入失败：' + (error && error.message ? error.message : error), 'err');
+      TS.toast('复制失败：' + (error && error.message ? error.message : error), 'err');
     } finally {
       if (btn) btn.classList.remove('is-busy');
+    }
+  }
+
+  /* 复制结果明细：把来源与目标路径显示出来，便于排查 */
+  function renderImportResult(result) {
+    const host = $('#qa-import-hint');
+    if (!host) return;
+    host.textContent = '';
+    if (result && result.source_path) {
+      host.appendChild(el('span', null, '来源：' + result.source_path));
+      host.appendChild(el('br'));
+    }
+    if (result && result.target_path) {
+      const target = el('span', null, '已存入：' + result.target_path);
+      target.style.color = 'var(--success)';
+      host.appendChild(target);
+    }
+    if (result && result.message && !result.ok) {
+      host.appendChild(el('span', null, result.message));
+    }
+    // 探测失败时列出找过的位置
+    if (result && Array.isArray(result.searched) && result.searched.length) {
+      const det = el('details', 'qa-images');
+      det.appendChild(el('summary', null, '已尝试查找这些位置'));
+      const ul = el('div', 'field-meta');
+      ul.innerHTML = result.searched.map(x => '· ' + esc(x)).join('<br>');
+      det.appendChild(ul);
+      host.appendChild(det);
     }
   }
 
@@ -392,6 +437,14 @@
       updateDirty();
     });
     $('#qa-import-btn')?.addEventListener('click', () => importFromKeyReply());
+    $('#qa-import-toggle')?.addEventListener('click', () => {
+      const row = $('#qa-import-path-row');
+      if (row) {
+        const hidden = row.hasAttribute('hidden');
+        if (hidden) row.removeAttribute('hidden');
+        else row.setAttribute('hidden', '');
+      }
+    });
     $('#qa-add-scope')?.addEventListener('click', () => addScope());
     $('#qa-test-btn')?.addEventListener('click', () => runTest());
   }

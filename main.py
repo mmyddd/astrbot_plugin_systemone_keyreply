@@ -1550,34 +1550,44 @@ class TypeSafeAutoReplyPlugin(Star):
         }
 
     async def _api_qa_import(self):
-        """从 KeyReply 的 triggers.yml 导入问答对。"""
+        """把 KeyReply 的问答表复制到本插件的数据目录。
+
+        默认自动探测来源文件；payload 传 replace=true 时整体替换目标表，
+        否则按问题去重后合并（追加）。
+        """
         from quart import request
+        from pathlib import Path
 
         payload = await request.get_json(silent=True) or {}
         scope = str(payload.get("scope") or SCOPE_GLOBAL)
         scope_id = str(payload.get("scope_id") or "").strip()
         path_text = str(payload.get("path") or self.qa_import_path or "").strip()
+        replace = bool(payload.get("replace", False))
 
         if scope not in (SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE):
             return {"message": f"未知作用域: {scope}"}, 400
         if scope in (SCOPE_GROUP, SCOPE_PRIVATE) and not scope_id:
             return {"message": "群聊/私聊专属表必须提供 scope_id"}, 400
 
-        from pathlib import Path
-
-        if not path_text:
-            candidates = self.qa_store.find_keyreply_files()
-            if not candidates:
-                return {
-                    "ok": False,
-                    "message": "未找到 KeyReply 数据文件，请在设置中手动填写 triggers.yml 的完整路径",
-                }, 404
-            path_text = candidates[0]
-
-        result = self.qa_store.import_keyreply_file(Path(path_text), scope, scope_id)
-        status = 200 if result.get("ok") else 400
-        result["path"] = path_text
+        result = self.qa_store.copy_keyreply_into_store(
+            Path(path_text) if path_text else None,
+            scope=scope,
+            scope_id=scope_id,
+            replace=replace,
+        )
+        # 找不到来源文件属于「没得导」，用 404 让页面给出更准确的提示
+        status = 200 if result.get("ok") else (404 if not result.get("source_path") else 400)
         result["summary"] = self.qa_store.scope_summary()
+        result["tables"] = [
+            {"scope": t.scope, "scope_id": t.scope_id, "key": t.key,
+             "label": t.label, "entries": t.entries}
+            for t in self.qa_store.all_tables()
+        ]
+        if result.get("ok"):
+            logger.info(
+                f"[TypeSafe][QA] 已从 {result.get('source_path')} 复制问答表到 "
+                f"{result.get('target_path')}（{result.get('message')}）"
+            )
         return result, status
 
     async def _api_qa_test(self):

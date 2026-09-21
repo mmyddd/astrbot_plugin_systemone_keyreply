@@ -166,7 +166,13 @@
               <p>答案相同的多条 Q 会自动归为一组（多 Q 一 A）</p>
             </div>
             <div class="card-head-right">
-              <label class="btn btn-ghost btn-sm" for="qa-file">从 KeyReply 导入</label>
+              <button class="btn btn-primary btn-sm" type="button" id="qa-import-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 4.5v10M8 10.5l4 4 4-4"></path>
+                  <path d="M5 17.5v1A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-1"></path>
+                </svg>
+                一键复制 KeyReply 问答表
+              </button>
             </div>
           </div>
           <div class="card-body">
@@ -176,11 +182,18 @@
               </svg>
               <span>「%」是通配符，代表任意内容。例如 <code>怎么安装%</code> 能命中「怎么安装插件」，<code>%今天%天气%</code> 能命中「我想了解今天的天气情况」。</span>
             </div>
-            <div class="qa-import-row">
-              <input class="input input-mono" id="qa-import-path" type="text" placeholder="triggers.yml 完整路径（留空自动探测）">
-              <button class="btn btn-primary btn-sm" type="button" id="qa-import-btn">导入</button>
+            <div class="qa-import-row" id="qa-import-source">
+              <span class="field-label">来源</span>
+              <span class="field-meta" id="qa-import-hint">正在探测 KeyReply 数据文件…</span>
+              <button class="btn btn-ghost btn-sm" type="button" id="qa-import-toggle">手动指定路径</button>
             </div>
-            <p class="field-meta" id="qa-import-hint" style="margin:6px 0 14px"></p>
+            <div class="qa-import-row" id="qa-import-path-row" hidden>
+              <input class="input input-mono" id="qa-import-path" type="text" placeholder="triggers.yml 完整路径（留空自动探测）">
+            </div>
+            <label class="qa-replace-row">
+              <input type="checkbox" id="qa-import-replace">
+              <span>覆盖模式：用 KeyReply 的问答表整体替换当前作用域（不勾选则按问题去重合并）</span>
+            </label>
 
             <div id="qa-rows"></div>
             <div style="margin-top:14px">

@@ -526,8 +526,13 @@ class QAStore:
             })
         return out
 
-    def import_keyreply_file(self, path: Path, scope: str = SCOPE_GLOBAL, scope_id: str = "") -> Dict[str, Any]:
-        """从 KeyReply 的 triggers.yml 导入到指定作用域。"""
+    def import_keyreply_file(self, path: Path, scope: str = SCOPE_GLOBAL, scope_id: str = "",
+                             replace: bool = False) -> Dict[str, Any]:
+        """从 KeyReply 的 triggers.yml 导入到指定作用域。
+
+        replace=True 时用来源文件整体替换目标表（真实「复制」语义）；
+        否则按问题去重后追加。
+        """
         import yaml
 
         path = Path(path)
@@ -544,26 +549,37 @@ class QAStore:
             return {"ok": False, "message": "未在该文件中找到任何问答对", "imported": 0}
 
         table = self.get_table(scope, scope_id)
-        existing = {e.get("question") for e in table.entries}
-        added = 0
-        for entry in entries:
-            if entry["question"] in existing:
-                continue
-            table.entries.append(entry)
-            existing.add(entry["question"])
-            added += 1
+        if replace:
+            table.entries = list(entries)
+            table.answers = {}
+            added = len(entries)
+            skipped = 0
+        else:
+            existing = {e.get("question") for e in table.entries}
+            added = 0
+            for entry in entries:
+                if entry["question"] in existing:
+                    continue
+                table.entries.append(entry)
+                existing.add(entry["question"])
+                added += 1
+            skipped = len(entries) - added
         # 把答案相同的 Q 归入同一个答案池条目（多 Q → 一 A）
         regroup_answers(table)
         self.save()
+        action = "复制" if replace else "导入"
         return {
             "ok": True,
-            "message": f"成功导入 {added} 条问答对（跳过 {len(entries) - added} 条重复）",
+            "message": f"{action}完成：{added} 条问答对"
+            + ("" if replace else f"（跳过 {skipped} 条重复）"),
             "imported": added,
+            "skipped": skipped,
             "total": len(entries),
+            "replace": bool(replace),
         }
 
-    def find_keyreply_files(self, astrbot_root: Optional[Path] = None) -> List[str]:
-        """探测常见的 KeyReply 数据文件位置，供页面显示候选。"""
+    def keyreply_candidates(self, astrbot_root: Optional[Path] = None) -> List[Path]:
+        """列出所有会被探测的 KeyReply 数据文件路径（含不存在的）。"""
         candidates: List[Path] = []
         bases: List[Path] = []
         if astrbot_root:
@@ -580,9 +596,10 @@ class QAStore:
             candidates.append(base / "plugins" / "keyword_reply" / "triggers.yml")
             candidates.append(base / "plugin_data" / "keyword_reply" / "triggers.yml")
             candidates.append(base / "plugins" / "astrbot_plugin_KeyReply" / "triggers.yml")
+            candidates.append(base / "plugins" / "astrbot_plugin_keyreply" / "triggers.yml")
 
         seen: set = set()
-        found: List[str] = []
+        unique: List[Path] = []
         for c in candidates:
             try:
                 resolved = str(c.resolve())
@@ -591,6 +608,51 @@ class QAStore:
             if resolved in seen:
                 continue
             seen.add(resolved)
+            unique.append(c)
+        return unique
+
+    def find_keyreply_files(self, astrbot_root: Optional[Path] = None) -> List[str]:
+        """探测已存在的 KeyReply 数据文件，供页面显示候选。"""
+        found: List[str] = []
+        for c in self.keyreply_candidates(astrbot_root):
             if c.exists():
-                found.append(resolved)
+                try:
+                    found.append(str(c.resolve()))
+                except Exception:
+                    found.append(str(c))
         return found
+
+    def copy_keyreply_into_store(self, path: Optional[Path] = None, scope: str = SCOPE_GLOBAL,
+                                 scope_id: str = "", replace: bool = False) -> Dict[str, Any]:
+        """把 KeyReply 的问答表复制到本插件自己的数据目录。
+
+        与 import_keyreply_file 的区别：本方法面向「一键按钮」场景，
+        会自动探测来源文件，并返回可读的来源/目标路径与统计信息。
+        """
+        source: Optional[Path] = None
+        if path:
+            source = Path(path)
+            if not source.exists():
+                return {
+                    "ok": False,
+                    "message": f"指定的文件不存在：{source}",
+                    "source_path": str(source),
+                    "target_path": str(self.path),
+                    "searched": [str(p) for p in self.keyreply_candidates()],
+                }
+        else:
+            found = self.find_keyreply_files()
+            if not found:
+                return {
+                    "ok": False,
+                    "message": "未找到 KeyReply 的数据文件，请确认 KeyReply 插件已使用过「开始记录」功能",
+                    "source_path": "",
+                    "target_path": str(self.path),
+                    "searched": [str(p) for p in self.keyreply_candidates()],
+                }
+            source = Path(found[0])
+
+        result = self.import_keyreply_file(source, scope, scope_id, replace=replace)
+        result["source_path"] = str(source)
+        result["target_path"] = str(self.path)
+        return result
