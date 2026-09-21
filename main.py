@@ -191,7 +191,7 @@ def _mask_secret(value: object) -> str:
     "AstrBot & TypeSafe Community",
     "使用 TypeSafe AI 判断聊天消息是否需要 AI 主动参与，并调用 AstrBot 已配置的大语言模型生成自然回复。",
     "1.0.5",
-    "https://github.com/yixuexiaoao/astrbot_plugin_typesafe_autoreply",
+    "https://github.com/mmyddd/astrbot_plugin_typesafe_autoreply",
 )
 class TypeSafeAutoReplyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
