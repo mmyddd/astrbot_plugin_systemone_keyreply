@@ -255,7 +255,7 @@ const qaFixture = () => ({
       entries: [] }
   ],
   summary: { global_entries: 2, groups: ['111', '222', '333'], privates: [], total_entries: 3, table_count: 3 },
-  import_candidates: [], configured_import_path: '', data_file: '/tmp/qa_tables.json',
+  import_candidates: [], data_file: '/tmp/qa_tables.json',
   use_qa_table: true, enable_jev_topic: true, mode: 'jev', mode_label: 'Jev 话题模式',
   qa_min_confidence: '中', context_message_count: 3
 });

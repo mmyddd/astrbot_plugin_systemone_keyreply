@@ -140,12 +140,6 @@
     "default": false,
     "hint": "关闭（推荐，等同 KeyReply 行为）= 未命中 QA 就保持静默；开启 = 未命中时改用 LLM 自由回复"
   },
-  "qa_import_path": {
-    "description": "KeyReply 数据文件路径",
-    "type": "string",
-    "default": "",
-    "hint": "留空则自动探测 data/plugins/keyword_reply/triggers.yml；可在配置中心一键导入"
-  },
   "custom_provider_id": {
     "description": "指定 AstrBot Provider ID",
     "type": "string",

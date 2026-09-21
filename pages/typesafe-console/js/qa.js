@@ -519,8 +519,9 @@
       host.appendChild(el('br'));
       host.appendChild(el('span', 'field-meta', '本插件数据文件：' + state.qa.data_file));
     }
+    // 路径不再来自插件配置，仅用探测结果预填，用户也可在「手动指定路径」里改
     const input = $('#qa-import-path');
-    if (input && !input.value) input.value = state.qa.configured_import_path || (cands[0] || '');
+    if (input && !input.value && cands.length) input.value = cands[0];
   }
 
   /* ── 操作 ─────────────────────────────────────────────── */

@@ -103,7 +103,6 @@ _EDITABLE_LIST_FIELDS = (
 _EDITABLE_TEXT_FIELDS = (
     "reply_source",
     "qa_min_confidence",
-    "qa_import_path",
     "typesafe_api_key",
     "typesafe_model",
     "typesafe_custom_model",
@@ -377,7 +376,6 @@ class TypeSafeAutoReplyPlugin(Star):
             self.config.get("qa_min_confidence", "中")
         )
         self.qa_fallback_to_llm = bool(self.config.get("qa_fallback_to_llm", False))
-        self.qa_import_path = str(self.config.get("qa_import_path", "") or "")
         self.qa_mode = resolve_mode(self.enable_jev_topic)
         self.qa_store = QAStore(self._plugin_data_dir())
 
@@ -1411,7 +1409,6 @@ class TypeSafeAutoReplyPlugin(Star):
             "summary": self.qa_store.scope_summary(),
             "data_file": str(self.qa_store.path),
             "import_candidates": self.qa_store.find_keyreply_files(),
-            "configured_import_path": self.qa_import_path,
             "mode": self.qa_mode,
             "mode_label": MODE_LABELS.get(self.qa_mode, self.qa_mode),
             "enable_jev_topic": self.enable_jev_topic,
@@ -1492,7 +1489,7 @@ class TypeSafeAutoReplyPlugin(Star):
         payload = await request.get_json(silent=True) or {}
         scope = str(payload.get("scope") or SCOPE_GLOBAL)
         scope_id = str(payload.get("scope_id") or "").strip()
-        path_text = str(payload.get("path") or self.qa_import_path or "").strip()
+        path_text = str(payload.get("path") or "").strip()
         replace = bool(payload.get("replace", False))
 
         if scope not in (SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE):

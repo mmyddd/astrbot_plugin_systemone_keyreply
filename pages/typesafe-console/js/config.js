@@ -66,7 +66,6 @@
         { key: 'enable_jev_topic', type: 'bool', label: '启用 Jev 话题判断', desc: '开启 = 正则召回后交给 Jev 确认话题，再由 LLM 围绕该条答案生成；关闭 = 回退 KeyReply 原样，正则命中直接发送固定答案。' },
         { key: 'qa_min_confidence', type: 'select', label: '话题命中最低置信度', options: ['高', '中', '低'], desc: 'Jev 确认话题的置信度低于该等级时视为未命中，保持静默。' },
         { key: 'qa_fallback_to_llm', type: 'bool', label: 'QA 未命中时回退大模型', desc: '关闭（等同 KeyReply 行为）= 未命中就静默；开启 = 未命中改用 LLM 自由回复。' },
-        { key: 'qa_import_path', type: 'text', label: 'KeyReply 数据文件路径', desc: '留空则自动探测 data/plugins/keyword_reply/triggers.yml。', mono: true }
       ]
     },
     {
