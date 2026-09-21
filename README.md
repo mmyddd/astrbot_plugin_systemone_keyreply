@@ -71,7 +71,7 @@
 进入 AstrBot 的 `data/plugins/` 目录，克隆或解压本项目：
 ```bash
 cd data/plugins/
-git clone https://github.com/AstrBotDevs/astrbot_plugin_typesafe_autoreply.git
+git clone https://github.com/yixuexiaoao/astrbot_plugin_typesafe_autoreply.git
 ```
 在 AstrBot 对应 Python 环境中安装依赖：
 ```bash
