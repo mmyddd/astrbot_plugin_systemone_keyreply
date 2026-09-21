@@ -554,9 +554,14 @@ svg { display: block; width: 100%; height: 100%; }
 .qa-item[open] .qa-item-chevron::before { transform: rotate(45deg); margin-top: 1px; }
 
 .qa-item-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-.qa-item-body .qa-row-head { margin-bottom: 0; gap: 8px; }
-/* 展开区内的开关不需要 auto 外边距，否则会把它推到行尾、与说明文字错位 */
-.qa-item-body .qa-row-head .switch { margin-left: 0; }
+
+/* 展开区顶部操作行：开关 + 说明在左，删除在右 */
+.qa-row-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 0;
+}
+.qa-row-head .switch { margin-left: 0; flex: none; }
+.qa-row-head .field-meta { flex: 1 1 auto; min-width: 0; }
 
 
 /* ── 问答表选择与群配置弹窗 ─────────────────────────────── */

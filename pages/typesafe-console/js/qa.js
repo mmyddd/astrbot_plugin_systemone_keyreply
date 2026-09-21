@@ -26,6 +26,16 @@
     return { scope: t.scope, scope_id: t.scope_id, key: t.key };
   }
 
+  /** 折叠态展示的答案摘要：纯图片答案也要正确呈现，不能显示成「未填写」 */
+  function answerSummaryOf(row) {
+    const text = String(row.answerText || '').trim();
+    const images = format.lines(row.answerImages);
+    if (text && images.length) return text + '  🖼 ' + images.length + ' 张图';
+    if (text) return text;
+    if (images.length) return '🖼 ' + images.length + ' 张图片';
+    return '（未填写答案）';
+  }
+
   function tableIcon(t) {
     if (!t || t.scope === 'global') return '全局';
     return t.scope === 'group' ? '群' : '私聊';
@@ -49,6 +59,7 @@
       question: e.question || '',
       answerText: (e.answer && e.answer.text) || '',
       answerImages: ((e.answer && e.answer.images) || []).join('\n'),
+      _hadAnswer: Boolean(e.answer && ((e.answer.text || '').trim() || (e.answer.images || []).length)),
       enabled: e.enabled !== false,
       answerKey: e.answer_key || ''
     }));
@@ -85,14 +96,22 @@
     const list = el('div', 'chip-group');
     tables.forEach(t => {
       const active = cur && t.key === cur.key;
-      const chip = el('label', 'chip qa-scope-chip' + (active ? ' is-checked' : ''));
+      // 必须是 div 而非 label：label 会把内部按钮当作 labelable 控件，
+      // 导致点击格子任意位置都会连带触发 ⋯ 按钮
+      const chip = el('div', 'chip qa-scope-chip' + (active ? ' is-checked' : ''));
+      chip.setAttribute('role', 'button');
+      chip.tabIndex = 0;
       chip.appendChild(el('span', 'qa-scope-kind', tableIcon(t)));
       chip.appendChild(el('span', 'qa-scope-name', tableTitle(t)));
       chip.appendChild(el('span', 'qa-scope-count', t.entries.length + ' 条'));
-      chip.addEventListener('click', () => {
+      const selectThis = () => {
         if (state.qaDirty && !window.confirm('当前改动尚未保存，切换问答表将丢弃这些改动。继续？')) return;
         state.qaTableKey = t.key;
         loadDraft();
+      };
+      chip.addEventListener('click', selectThis);
+      chip.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectThis(); }
       });
 
       // 每张非全局表都提供一个「配置群」入口，用于编辑服务范围与名称
@@ -101,10 +120,11 @@
         cfg.type = 'button';
         cfg.title = '打开群配置';
         cfg.addEventListener('click', (ev) => {
+          // 只弹群配置，且不得冒泡去触发所在格子的「切换问答表」
           ev.stopPropagation();
-          ev.preventDefault();
           openTableConfig(t);
         });
+        cfg.addEventListener('keydown', (ev) => ev.stopPropagation());
         chip.appendChild(cfg);
       }
       list.appendChild(chip);
@@ -164,7 +184,7 @@
 
     const texts = el('span', 'qa-item-texts');
     const qSpan = el('span', 'qa-item-q', row.question || '（未填写问题）');
-    const aSpan = el('span', 'qa-item-a', row.answerText || '（未填写答案）');
+    const aSpan = el('span', 'qa-item-a', answerSummaryOf(row));
     texts.appendChild(qSpan);
     texts.appendChild(aSpan);
     summary.appendChild(texts);
@@ -231,7 +251,7 @@
     aArea.placeholder = '命中后由 LLM 围绕这段内容生成回复';
     aArea.addEventListener('input', () => {
       row.answerText = aArea.value;
-      aSpan.textContent = row.answerText || '（未填写答案）';
+      aSpan.textContent = answerSummaryOf(row);
       state.qaDirty = true;
       updateDirty();
     });
@@ -243,7 +263,13 @@
     imgArea.rows = 2;
     imgArea.value = row.answerImages;
     imgArea.placeholder = '每行一个图片 URL';
-    imgArea.addEventListener('input', () => { row.answerImages = imgArea.value; state.qaDirty = true; updateDirty(); });
+    imgArea.addEventListener('input', () => {
+      row.answerImages = imgArea.value;
+      aSpan.textContent = answerSummaryOf(row);
+      // 图片是答案的一部分，填写后自动展开该分组便于核对
+      state.qaDirty = true;
+      updateDirty();
+    });
     imgDetails.appendChild(imgArea);
     aField.appendChild(imgDetails);
     body.appendChild(aField);
@@ -558,9 +584,13 @@
           : '<span class="pill pill-mute">保持静默</span>']);
         rows.push(['当前模式', esc(r.mode_label || r.mode || '—')]);
         if (r.classic) {
+          const cImgs = r.classic.images || [];
+          const cAns = String(r.classic.answer || '').trim()
+            ? esc(String(r.classic.answer).slice(0, 60))
+            : (cImgs.length ? '（纯图片答案 · ' + cImgs.length + ' 张）' : '（空答案）');
           rows.push(['正则召回', '<span class="pill pill-ok">命中</span> ' + esc(r.classic.question)
             + '<br><span class="field-meta">来源 ' + esc(r.classic.table_label || '') + ' · 答案：'
-            + esc(String(r.classic.answer || '').slice(0, 60)) + '</span>']);
+            + cAns + '</span>']);
         } else {
           rows.push(['正则召回', '<span class="pill pill-mute">未命中</span> <span class="field-meta">不会触发 Jev</span>']);
         }
@@ -571,7 +601,12 @@
           if (r.jev.matched) {
             rows.push(['置信度', esc(r.jev.confidence_level || '') + ' (' + Number(r.jev.confidence_score || 0).toFixed(2) + ')'
               + (r.jev.confidence_ok ? ' <span class="pill pill-ok">达标</span>' : ' <span class="pill pill-bad">低于门槛</span>')]);
-            if (r.jev.answer) rows.push(['将围绕此答案生成', esc(String(r.jev.answer).slice(0, 80))]);
+            const jImgs = r.jev.images || [];
+            if (r.jev.answer) {
+              rows.push(['将围绕此答案生成', esc(String(r.jev.answer).slice(0, 80))]);
+            } else if (jImgs.length) {
+              rows.push(['将直接发送图片', esc(jImgs.join(' , ').slice(0, 80))]);
+            }
           }
           rows.push(['耗时', format.ms(r.jev.elapsed_ms)]);
         }

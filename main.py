@@ -936,7 +936,9 @@ class TypeSafeAutoReplyPlugin(Star):
         """已经确定使用哪条问答对：组装上下文，让 LLM 围绕答案 A 生成并发送。"""
         entry = match.get("entry") or {}
         grounded = resolved_text(match)
-        if not grounded.strip():
+        images = resolved_images(match)
+        # 纯图片答案同样合法，只有文本与图片都为空才算空答案
+        if not grounded.strip() and not images:
             logger.warning("[TypeSafe][QA] 选中条目的答案为空，保持静默")
             return
 
@@ -948,23 +950,26 @@ class TypeSafeAutoReplyPlugin(Star):
         )
 
         chat_context = self.context_manager.format_context_string(recent_records)
-        reply_text = await self.reply_engine.generate_grounded_reply(
-            event=event,
-            current_message=text,
-            chat_context=chat_context,
-            grounded_answer=grounded,
-            model_mode=self.model_mode,
-            custom_provider_id=self.custom_provider_id,
-            reply_style=self.reply_style,
-            reply_length_mode=self.reply_length_mode,
-            max_chars=self.max_chars,
-            custom_prompt=self.custom_prompt,
-            image_urls=image_urls if image_urls else None,
-        )
+        # 纯图片答案没有可围绕的文字素材，直接发送图片，避免让 LLM 凭空编造
+        reply_text = ""
+        if grounded.strip():
+            reply_text = await self.reply_engine.generate_grounded_reply(
+                event=event,
+                current_message=text,
+                chat_context=chat_context,
+                grounded_answer=grounded,
+                model_mode=self.model_mode,
+                custom_provider_id=self.custom_provider_id,
+                reply_style=self.reply_style,
+                reply_length_mode=self.reply_length_mode,
+                max_chars=self.max_chars,
+                custom_prompt=self.custom_prompt,
+                image_urls=image_urls if image_urls else None,
+            )
 
-        if not reply_text:
-            logger.warning("[TypeSafe][QA] LLM 未能围绕固定答案生成回复，回退为直接发送答案")
-            reply_text = grounded
+            if not reply_text:
+                logger.warning("[TypeSafe][QA] LLM 未能围绕固定答案生成回复，回退为直接发送答案")
+                reply_text = grounded
 
         await self._apply_reply_delay()
         self.cooldown_tracker.record_reply_sent(session_id, event.get_sender_id())
@@ -975,8 +980,10 @@ class TypeSafeAutoReplyPlugin(Star):
             f"[TypeSafe][QA] 已回复会话 {session_id}（话题: {question_of(entry)}）"
         )
 
-        chain = [Plain(text=reply_text)]
-        for url in resolved_images(match):
+        chain = []
+        if reply_text:
+            chain.append(Plain(text=reply_text))
+        for url in images:
             try:
                 chain.append(Image.fromURL(url=url))
             except Exception as e:
@@ -1562,7 +1569,8 @@ class TypeSafeAutoReplyPlugin(Star):
                 "scope_id": table.scope_id,
                 "ids": list(table.ids),
                 "name": table.name,
-                "entries": table.entries,
+                # 用已解析答案的形态回显，页面的草稿与列表才不会显示成空答案
+                "entries": self.qa_store.serialize_entries(table),
             },
             "tables": self.qa_store.table_list(),
             "summary": self.qa_store.scope_summary(),
@@ -1597,11 +1605,7 @@ class TypeSafeAutoReplyPlugin(Star):
         # 找不到来源文件属于「没得导」，用 404 让页面给出更准确的提示
         status = 200 if result.get("ok") else (404 if not result.get("source_path") else 400)
         result["summary"] = self.qa_store.scope_summary()
-        result["tables"] = [
-            {"scope": t.scope, "scope_id": t.scope_id, "key": t.key,
-             "label": t.label, "entries": t.entries}
-            for t in self.qa_store.all_tables()
-        ]
+        result["tables"] = self.qa_store.table_list()
         if result.get("ok"):
             logger.info(
                 f"[TypeSafe][QA] 已从 {result.get('source_path')} 复制问答表到 "
@@ -1657,8 +1661,9 @@ class TypeSafeAutoReplyPlugin(Star):
             entry = classic.get("entry") or {}
             classic_view = {
                 "question": question_of(entry),
-                "answer": answer_text_of(entry),
-                "images": answer_images_of(entry),
+                # 用已解析答案，纯图片答案也要能在这里看到
+                "answer": resolved_text(classic),
+                "images": resolved_images(classic),
                 "table_label": classic.get("table_label"),
             }
 
@@ -1674,10 +1679,12 @@ class TypeSafeAutoReplyPlugin(Star):
             topic = await self.classifier.match_topic(state=state, questions=questions)
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             grounded = None
+            grounded_images = []
             if topic.matched:
                 m = self.qa_store.find_reply_by_question(topic.question, scope, scope_id)
                 if m:
-                    grounded = answer_text_of(m.get("entry"))
+                    grounded = resolved_text(m)
+                    grounded_images = resolved_images(m)
             jev_view = {
                 "matched": topic.matched,
                 "question": topic.question,
@@ -1686,6 +1693,7 @@ class TypeSafeAutoReplyPlugin(Star):
                 "reason": topic.reason,
                 "is_fallback": topic.is_fallback,
                 "answer": grounded,
+                "images": grounded_images,
                 "confidence_ok": MessageClassifier.is_confidence_sufficient(
                     topic.confidence_level, self.qa_min_confidence
                 ),

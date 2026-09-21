@@ -241,6 +241,66 @@ t('qa 打开群配置弹窗', () => {
   TS.qa.closeTableConfig();
 });
 
+t('qa 表格子不是 label（否则点任意位置会触发 ⋯ 按钮）', () => {
+  const chips = [];
+  const walk = n => { for (const c of n.children) { if (String(c.className || '').indexOf('qa-scope-chip') >= 0) chips.push(c); walk(c); } };
+  walk(hosts['#qa-scope-bar']);
+  if (!chips.length) throw new Error('未找到问答表格子');
+  const bad = chips.filter(c => c.tagName === 'LABEL');
+  if (bad.length) throw new Error('有 ' + bad.length + ' 个格子仍是 <label>，点击正文会连带触发内部按钮');
+});
+
+t('qa 格子内的 ⋯ 按钮阻止冒泡且只弹配置', () => {
+  const walks = [];
+  const walk = n => { for (const c of n.children) { walks.push(c); walk(c); } };
+  walk(hosts['#qa-scope-bar']);
+  const cfgBtns = walks.filter(c => String(c.className || '').indexOf('qa-scope-cfg') >= 0);
+  if (!cfgBtns.length) throw new Error('未找到 ⋯ 按钮');
+
+  const chip = cfgBtns[0].parentNode;
+  let chipClicks = 0;
+  chip.addEventListener('click', () => { chipClicks++; });
+
+  const ev = { stopped: false, stopPropagation() { this.stopped = true; }, preventDefault() {} };
+  cfgBtns[0]._ev.click(ev);
+  if (!ev.stopped) throw new Error('⋯ 按钮未调用 stopPropagation，会连带切换问答表');
+  if (chipClicks !== 0) throw new Error('点击 ⋯ 触发了所在格子的切换逻辑');
+
+  // 同时确认弹窗确实被打开
+  const modal = hosts['#qa-cfg-modal'];
+  if (modal && modal.hasAttribute && modal.hasAttribute('hidden')) throw new Error('⋯ 未打开群配置弹窗');
+  TS.qa.closeTableConfig();
+});
+
+/* ── 样式守卫：DOM 桩没有布局引擎，关键布局规则只能查样式源 ── */
+t('样式：.qa-row-head 保持 flex 行布局', () => {
+  const css = fs.readFileSync(
+    require('path').join(REPO, 'pages', 'typesafe-console', 'style.css'), 'utf8'
+  );
+  const m = css.match(/\.qa-row-head\s*\{([^}]*)\}/);
+  if (!m) throw new Error('style.css 中缺少 .qa-row-head 规则');
+  const body = m[1];
+  if (body.indexOf('display: flex') < 0) {
+    throw new Error('.qa-row-head 缺少 display:flex，展开区控件会重叠：' + body.trim());
+  }
+  if (body.indexOf('align-items') < 0) {
+    throw new Error('.qa-row-head 缺少 align-items，开关与文字会错位');
+  }
+});
+
+t('样式：问答表格子不是 label 选择器依赖', () => {
+  const css = fs.readFileSync(
+    require('path').join(REPO, 'pages', 'typesafe-console', 'style.css'), 'utf8'
+  );
+  // .qa-scope-cfg 必须有可点击尺寸，否则 ⋯ 点不到
+  const m = css.match(/\.qa-scope-cfg\s*\{([^}]*)\}/);
+  if (!m) throw new Error('style.css 中缺少 .qa-scope-cfg 规则');
+  const body = m[1];
+  if (!/width:\s*\d+px/.test(body) || !/height:\s*\d+px/.test(body)) {
+    throw new Error('⋯ 按钮缺少明确尺寸，可能点不中：' + body.trim());
+  }
+});
+
 t('qa 空表渲染占位', () => {
   TS.state.qaTableKey = 'group:333';
   TS.qa.loadDraft();

@@ -505,8 +505,32 @@ class QAStore:
             "table_count": len(self.tables),
         }
 
+    @staticmethod
+    def serialize_entries(table: "QATable") -> List[Dict[str, Any]]:
+        """把条目序列化为「带最终生效答案」的形态。
+
+        条目可能只持有 answer_key，真正的答案在答案池里；页面与其它消费方
+        直接读 answer 即可，不需要自己再查池，也不会出现「未填写答案」的假象。
+        """
+        out: List[Dict[str, Any]] = []
+        for entry in table.entries:
+            resolved = table.resolve_answer(entry)
+            item = {
+                "question": str(entry.get("question") or ""),
+                "answer": {
+                    "text": str(resolved.get("text") or ""),
+                    "images": list(resolved.get("images") or []),
+                },
+                "enabled": entry.get("enabled", True) is not False,
+            }
+            key = str(entry.get("answer_key") or "").strip()
+            if key:
+                item["answer_key"] = key
+            out.append(item)
+        return out
+
     def table_list(self) -> List[Dict[str, Any]]:
-        """供页面使用的表清单：每张表带上 ids 与 name。"""
+        """供页面使用的表清单：每张表带上 ids、name 与已解析答案的条目。"""
         return [
             {
                 "key": t.key,
@@ -515,7 +539,7 @@ class QAStore:
                 "ids": list(t.ids),
                 "name": t.name,
                 "label": t.label,
-                "entries": t.entries,
+                "entries": self.serialize_entries(t),
                 "is_global": t.scope == SCOPE_GLOBAL,
             }
             for t in self.all_tables()
