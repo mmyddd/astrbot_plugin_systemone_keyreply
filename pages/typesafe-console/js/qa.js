@@ -114,7 +114,12 @@
         bySig.set(sig, g);
         groups.push(g);
       }
-      g.questions.push({ _id: nextId(), text: en.question || '', enabled: en.enabled !== false });
+      g.questions.push({
+        _id: nextId(),
+        text: en.question || '',
+        enabled: en.enabled !== false,
+        jev: en.jev !== false
+      });
       if (en.enabled === false) g.enabled = false;
     });
 
@@ -139,7 +144,9 @@
         const entry = {
           question: String(q.text).trim(),
           answer: answer,
-          enabled: q.enabled !== false && g.enabled !== false
+          enabled: q.enabled !== false && g.enabled !== false,
+          // 条目级：是否交给 Jev 做相关性判定（默认开启）
+          jev: q.jev !== false
         };
         // hint 是答案级的：只写在每个 Q 上，保存后由后端归入同一个答案池
         if (hint) entry.hint = hint;
@@ -349,6 +356,24 @@
       });
       row.appendChild(qInput);
 
+      // 条目级 Jev 判定开关：关闭则命中即直接回复该答案
+      const jevWrap = el('label', 'qa-q-jev' + (q.jev === false ? ' is-off' : ''));
+      const jcb = el('input');
+      jcb.type = 'checkbox';
+      jcb.checked = q.jev !== false;
+      jcb.title = '是否交给 Jev 判断真提问/假命中；关闭则命中即直接回复';
+      jcb.addEventListener('change', () => {
+        q.jev = jcb.checked;
+        jevWrap.classList.toggle('is-off', !jcb.checked);
+        label.textContent = jcb.checked ? 'Jev 判定' : '直接回复';
+        state.qaDirty = true;
+        updateDirty();
+      });
+      jevWrap.appendChild(jcb);
+      const label = el('span', 'qa-q-jev-label', q.jev === false ? '直接回复' : 'Jev 判定');
+      jevWrap.appendChild(label);
+      row.appendChild(jevWrap);
+
       const qToggle = el('label', 'switch');
       const qcb = el('input');
       qcb.type = 'checkbox';
@@ -379,7 +404,7 @@
     addQ.type = 'button';
     addQ.addEventListener('click', () => {
       group.questions = group.questions || [];
-      group.questions.push({ _id: nextId(), text: '', enabled: true });
+      group.questions.push({ _id: nextId(), text: '', enabled: true, jev: true });
       state.qaDirty = true;
       renderRows();
       updateDirty();
@@ -412,9 +437,9 @@
     host.textContent = '';
     host.appendChild(el('span', 'field-label', '当前流程：'));
     host.appendChild(el('span', 'pill pill-ok', '固定问答表'));
-    host.appendChild(el('span', 'pill ' + (d.enable_jev_topic ? 'pill-brand' : 'pill-warn'),
-      d.enable_jev_topic ? 'Jev 相关性判定已开启' : 'Jev 关闭（正则命中即回复）'));
-    host.appendChild(el('span', 'field-meta', '最低置信度 ' + (d.qa_min_confidence || '中')
+    host.appendChild(el('span', 'pill pill-brand', 'Jev 相关性判定'));
+    host.appendChild(el('span', 'field-meta',
+      '是否判定由每条问答对单独控制 · 最低置信度 ' + (d.qa_min_confidence || '中')
       + ' · 上下文 ' + format.num(d.context_message_count) + ' 条'));
   }
 
@@ -747,7 +772,7 @@
       state.qaGroups = state.qaGroups || [];
       state.qaGroups.push({
         _id: nextId(), answerText: '', answerImages: '', hint: '',
-        questions: [{ _id: nextId(), text: '', enabled: true }],
+        questions: [{ _id: nextId(), text: '', enabled: true, jev: true }],
         enabled: true, answerKey: ''
       });
       state.qaDirty = true;

@@ -60,7 +60,6 @@
       title: '固定问答表（KeyReply）',
       desc: '回复来源选择「固定问答表」时生效：先由本地正则召回，命中才触发 Jev 审核与 LLM 生成；未命中一律静默。',
       fields: [
-        { key: 'enable_jev_topic', type: 'bool', wide: true, label: '启用 Jev 相关性判定', desc: '开启 = 正则召回命中 Q 后，把 Q 与 A 一起交给 Jev 判断是否真提问，确认后才回复；关闭 = 回退 KeyReply 原样，正则命中直接发送固定答案。' },
         { key: 'qa_min_confidence', type: 'select', label: '相关性判定最低置信度', options: ['高', '中', '低'], desc: 'Jev 判定为真提问的置信度低于该等级时视为未命中，保持静默。' },
       ]
     },

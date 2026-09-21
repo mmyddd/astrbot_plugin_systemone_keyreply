@@ -158,6 +158,8 @@ def normalize_entry(raw: Any) -> Optional[Dict[str, Any]]:
     hint = str(raw.get("hint") or "").strip()
     if hint:
         entry["hint"] = hint
+    # 是否交由 Jev 做相关性判定（默认开启）；关闭则该条正则命中即直接回复
+    entry["jev"] = raw.get("jev", True) is not False
     # 仅在有分组时写出 answer_key，保持与旧数据的存储形态一致
     if answer_key:
         entry["answer_key"] = answer_key
@@ -475,6 +477,7 @@ class QAStore:
                     "answer_text": str(answer.get("text") or ""),
                     "answer_images": list(answer.get("images") or []),
                     "hint": str(answer.get("hint") or ""),
+                    "jev": entry.get("jev", True) is not False,
                     "entry": entry,
                     "scope": table.scope,
                     "scope_id": table.scope_id,
@@ -574,6 +577,7 @@ class QAStore:
                     "images": list(resolved.get("images") or []),
                 },
                 "enabled": entry.get("enabled", True) is not False,
+                "jev": entry.get("jev", True) is not False,
             }
             # hint 与答案同源：优先条目级，其次答案池级
             hint = str(resolved.get("hint") or "").strip()

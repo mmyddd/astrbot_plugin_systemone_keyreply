@@ -40,7 +40,7 @@ class FakeEvent:
     def chain_result(self, c): return {"type": "chain", "chain": c}
 EV = FakeEvent()
 
-cfg = {"reply_source": "固定问答表 (KeyReply)", "enable_jev_topic": False,
+cfg = {"reply_source": "固定问答表 (KeyReply)", "enable_reply_delay": False,
        "typesafe_api_key": "ts_key_1234567890", "enable_reply_delay": False}
 ctx = type("C", (), {"register_web_api": lambda *a, **k: None,
                      "llm_calls": [],
@@ -50,8 +50,8 @@ p = M.TypeSafeAutoReplyPlugin(ctx, cfg)
 async def run():
     # 造两条同图片答案的 Q（会被归组进答案池）
     quart._Req._payload = {"scope": "group", "ids": ["111"], "entries": [
-        {"question": "原神", "answer": {"text": "", "images": [IMG]}, "enabled": True},
-        {"question": "崩铁", "answer": {"text": "", "images": [IMG]}, "enabled": True},
+        {"question": "原神", "answer": {"text": "", "images": [IMG]}, "jev": False, "enabled": True},
+        {"question": "崩铁", "answer": {"text": "", "images": [IMG]}, "jev": False, "enabled": True},
     ]}
     await p._api_qa_save()
 
@@ -108,10 +108,12 @@ async def run():
         check("Jev 模式回复链含图片", "Image" in kinds2, kinds2)
 
     # 4. 命中测试接口要能看到图片答案
+    #    jev=False 的条目走「命中即直接回复」分支，会填充 classic 视图
     quart._Req._payload = {"text": "原神", "scope": "group", "scope_id": "111"}
     t = await p._api_qa_test()
     check("命中测试暴露图片答案", t["classic"] and t["classic"].get("images") == [IMG],
           t.get("classic"))
+    check("命中测试报告 would_reply", t.get("would_reply") is True, t.get("would_reply"))
 
     # 5. 空答案（文本与图片都空）仍应静默
     p3 = M.TypeSafeAutoReplyPlugin(type("C", (), {"register_web_api": lambda *a, **k: None})(), cfg)

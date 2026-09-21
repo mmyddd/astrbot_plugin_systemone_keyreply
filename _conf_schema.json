@@ -67,12 +67,6 @@
     ],
     "default": "跟随当前会话模型"
   },
-  "enable_jev_topic": {
-    "description": "启用 Jev 话题判断",
-    "type": "bool",
-    "default": true,
-    "hint": "开启 = 把 QA 表的问题作为「话题判断关键词」交给 Jev 做语义路由，命中后由 LLM 围绕该条答案生成；关闭 = 回退到 KeyReply 原本的正则匹配并直接发送固定答案"
-  },
   "qa_min_confidence": {
     "description": "话题命中最低置信度",
     "type": "string",

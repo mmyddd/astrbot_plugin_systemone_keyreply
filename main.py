@@ -113,7 +113,6 @@ _EDITABLE_TEXT_FIELDS = (
 )
 
 _EDITABLE_BOOL_FIELDS = (
-    "enable_jev_topic",
     "enable_plugin",
     "enable_group",
     "enable_private",
@@ -311,11 +310,11 @@ class TypeSafeAutoReplyPlugin(Star):
 
         # 10. 固定问答表（KeyReply 兼容）
         # 固定问答表是唯一回复来源：未命中 Q 一律静默
-        self.enable_jev_topic = bool(self.config.get("enable_jev_topic", True))
         self.qa_min_confidence = normalize_confidence_level(
             self.config.get("qa_min_confidence", "中")
         )
-        self.qa_mode = resolve_mode(self.enable_jev_topic)
+        # 相关性判定是否启用改为「按问答条目」决定，模式本身固定为 jev 语义
+        self.qa_mode = MODE_JEV
         self.qa_store = QAStore(self._plugin_data_dir())
 
         # 11. WebUI 配置中心（Dashboard 插件页）后端路由
@@ -565,13 +564,28 @@ class TypeSafeAutoReplyPlugin(Star):
             % (len(candidates), " | ".join(c["question"] for c in candidates))
         )
 
-        # 开关关闭：回退 KeyReply 原样，正则命中即直接发送固定答案
-        if not self.enable_jev_topic:
+        # 按条目自身的 jev 字段分流：
+        #   jev=False 的条目不做相关性判定，正则命中即直接回复（KeyReply 原样行为）
+        #   jev=True 的条目交给 Jev 判定是否真提问
+        direct = [c for c in candidates if not c.get("jev", True)]
+        judged = [c for c in candidates if c.get("jev", True)]
+
+        # 未开启判定的条目先到先得：它们显式要求「命中即回复」
+        if direct:
+            logger.debug(
+                "[TypeSafe][QA] 命中未开启 Jev 判定的条目，直接回复：%s" % direct[0]["question"]
+            )
             async for _ in self._qa_send_answer(
-                event, text, session_id, candidates[0], image_urls, llm_mode=False
+                event, text, session_id, direct[0], image_urls, llm_mode=False
             ):
                 yield _
             return
+
+        if not judged:
+            logger.debug("[TypeSafe][QA] 候选均未开启 Jev 判定且无直接条目，静默")
+            return
+
+        candidates = judged
 
         # ── 2. Jev 相关性判定（仅在有召回时发生）──────────────
         if not self.typesafe_client.is_configured():
@@ -731,8 +745,24 @@ class TypeSafeAutoReplyPlugin(Star):
             return
 
         recalled = "、".join(c["question"] for c in candidates)
+
+        # 按条目 jev 分流：未开启判定的条目命中即直接回复
+        direct = [c for c in candidates if not c.get("jev", True)]
+        judged = [c for c in candidates if c.get("jev", True)]
+        if direct:
+            c0 = direct[0]
+            yield event.plain_result(
+                "=== 固定问答表命中测试 ===\n"
+                f"测试消息: {test_text}\n"
+                f"正则召回: {recalled}\n"
+                f"结论: 命中未开启 Jev 判定的条目「{c0['question']}」→ 直接回复该答案\n"
+                f"答案 A: {c0['answer_text'] or '（纯图片答案）'}\n"
+                "=========================="
+            )
+            return
+
         yield event.plain_result(
-            f"正则召回命中 {len(candidates)} 条：{recalled}\n"
+            f"正则召回命中 {len(judged)} 条：{recalled}\n"
             f"正在交由 Jev ({self.typesafe_model}) 判断是否真提问..."
         )
 
@@ -741,14 +771,14 @@ class TypeSafeAutoReplyPlugin(Star):
             return
 
         state = {"recent_chat": [], "current_message": {"sender": "测试用户", "text": test_text}}
-        topic = await self.classifier.match_relevance(state=state, candidates=candidates)
+        topic = await self.classifier.match_relevance(state=state, candidates=judged)
         confidence_ok = MessageClassifier.is_confidence_sufficient(
             topic.confidence_level, self.qa_min_confidence
         )
 
         if topic.matched and confidence_ok:
             chosen = next(
-                (c for c in candidates if c["question"] == topic.question), candidates[0]
+                (c for c in judged if c["question"] == topic.question), judged[0]
             )
             answer = chosen.get("answer_text") or "（纯图片答案）"
             verdict = f"真提问 → 应当回复\n答案 A: {answer}"
@@ -1038,7 +1068,6 @@ class TypeSafeAutoReplyPlugin(Star):
             "max_message_length": self.max_message_length,
             "qa_mode": self.qa_mode,
             "qa_mode_label": MODE_LABELS.get(self.qa_mode, self.qa_mode),
-            "qa_enable_jev_topic": bool(self.enable_jev_topic),
             "qa_min_confidence": self.qa_min_confidence,
             "qa_summary": self.qa_store.scope_summary(),
         }
@@ -1141,7 +1170,6 @@ class TypeSafeAutoReplyPlugin(Star):
             "import_candidates": self.qa_store.find_keyreply_files(),
             "mode": self.qa_mode,
             "mode_label": MODE_LABELS.get(self.qa_mode, self.qa_mode),
-            "enable_jev_topic": self.enable_jev_topic,
             "qa_min_confidence": self.qa_min_confidence,
             "context_message_count": self.context_message_count,
         }
@@ -1303,24 +1331,27 @@ class TypeSafeAutoReplyPlugin(Star):
                 "would_reply": False,
             }
 
-        # Jev 关闭：正则命中即直接回复首条
+        # 按条目分流：未开启判定的条目直接命中即回复；其余交给 Jev
+        direct = [c for c in candidates if not c.get("jev", True)]
+        judged = [c for c in candidates if c.get("jev", True)]
+
         classic_view = None
-        if not self.enable_jev_topic:
-            c0 = candidates[0]
+        if direct:
+            c0 = direct[0]
             classic_view = {
                 "question": c0["question"], "answer": c0["answer_text"],
                 "images": c0["answer_images"], "table_label": c0["table_label"],
             }
 
         jev_view = None
-        if self.enable_jev_topic and self.typesafe_client.is_configured():
+        if judged and self.typesafe_client.is_configured():
             state = {"recent_chat": [], "current_message": {"sender": "测试用户", "text": text}}
             started = time.perf_counter()
-            topic = await self.classifier.match_relevance(state=state, candidates=candidates)
+            topic = await self.classifier.match_relevance(state=state, candidates=judged)
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             chosen = None
             if topic.matched:
-                chosen = next((c for c in candidates if c["question"] == topic.question), None)
+                chosen = next((c for c in judged if c["question"] == topic.question), None)
             jev_view = {
                 "matched": topic.matched,
                 "question": topic.question,
@@ -1335,8 +1366,8 @@ class TypeSafeAutoReplyPlugin(Star):
                 ),
                 "elapsed_ms": round(elapsed_ms, 1),
             }
-        elif not self.enable_jev_topic:
-            jev_view = {"matched": False, "reason": "Jev 判定已关闭，正则命中即直接回复"}
+        elif not judged:
+            jev_view = {"matched": False, "reason": "召回条目均未开启 Jev 判定，正则命中即直接回复"}
         else:
             jev_view = {"matched": False, "reason": "TypeSafe API Key 未配置，无法进行相关性判定"}
 

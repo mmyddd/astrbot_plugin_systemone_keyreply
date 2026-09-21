@@ -292,6 +292,35 @@ t('qa 答案与辅助说明只渲染一次', () => {
   if (bad.length) throw new Error('答案级输入框数量异常（应为 3）: ' + textareasPerCard.join(','));
 });
 
+t('qa 每条问答对渲染 Jev 判定开关', () => {
+  TS.state.qaTableKey = 'group:111';
+  TS.qa.loadDraft();
+  const rows = walkAll(hosts['#qa-rows']).filter(n => hasClass(n, 'qa-q-row'));
+  if (!rows.length) throw new Error('未渲染问答对行');
+  const switches = rows.map(r => walkAll(r).find(n => hasClass(n, 'qa-q-jev')));
+  if (switches.some(s => !s)) throw new Error('存在缺少 Jev 开关的问答对行');
+  // 全部默认开启
+  const offs = switches.filter(s => hasClass(s, 'is-off'));
+  if (offs.length) throw new Error('默认应全部开启，实际有 ' + offs.length + ' 条为关闭');
+  const labels = switches.map(s => String(s.textContent || '').trim());
+  if (labels.some(l => l.indexOf('Jev 判定') < 0)) throw new Error('开关文案异常: ' + labels.join(','));
+});
+
+t('qa jev=False 的条目显示为直接回复', () => {
+  TS.state.qa.tables.find(x => x.key === 'group:111').entries.push(
+    { question: '直接回复条目', answer: { text: '直答', images: [] }, jev: false, enabled: true }
+  );
+  TS.qa.loadDraft();
+  const switches = walkAll(hosts['#qa-rows'])
+    .filter(n => hasClass(n, 'qa-q-row'))
+    .map(r => walkAll(r).find(n => hasClass(n, 'qa-q-jev')));
+  const off = switches.filter(s => hasClass(s, 'is-off'));
+  if (off.length !== 1) throw new Error('应恰好有 1 条为关闭，实际 ' + off.length);
+  if (String(off[0].textContent).indexOf('直接回复') < 0) {
+    throw new Error('关闭态文案应为「直接回复」: ' + off[0].textContent);
+  }
+});
+
 t('qa 辅助说明随答案保留', () => {
   const groups = TS.state.qaGroups || [];
   const withHint = groups.filter(g => String(g.hint || '').indexOf('询问语境') >= 0);

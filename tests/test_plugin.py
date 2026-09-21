@@ -370,7 +370,6 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
             "max_continuous_replies": 2,
             "enable_reply_delay": False,
             "debug_log": True,
-            "enable_jev_topic": True,
         }
         self.plugin = TypeSafeAutoReplyPlugin(self.context, self.config)
         # 用固定的全局问答表，避免读到磁盘数据
@@ -451,8 +450,13 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
         self.context.llm_generate.assert_not_called()
 
     async def test_jev_disabled_sends_answer_directly(self):
-        """关闭 Jev：正则命中即直接发送固定答案，不调用 LLM。"""
-        self.plugin.enable_jev_topic = False
+        """条目关闭 Jev 判定：正则命中即直接发送固定答案，不调用 LLM。"""
+        from qa_store import SCOPE_GLOBAL
+        self.plugin.qa_store.tables = {}
+        self.plugin.qa_store.replace_table(SCOPE_GLOBAL, "", [
+            {"question": "金锭%", "answer": {"text": "在本整合包中，金矿石无法在主世界生成。", "images": []},
+             "jev": False, "enabled": True},
+        ])
         self.plugin.classifier.match_relevance = AsyncMock()
         event = self._make_mock_event("金锭怎么做")
         results = [r async for r in self.plugin.on_group_message(event)]
@@ -465,9 +469,9 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
         """群专属表优先于全局表。"""
         from qa_store import SCOPE_GROUP
         self.plugin.qa_store.replace_table(SCOPE_GROUP, "group_1", [
-            {"question": "金锭%", "answer": {"text": "本群专属答案", "images": []}, "enabled": True},
+            {"question": "金锭%", "answer": {"text": "本群专属答案", "images": []},
+             "jev": False, "enabled": True},
         ])
-        self.plugin.enable_jev_topic = False
         event = self._make_mock_event("金锭怎么做")
         results = [r async for r in self.plugin.on_group_message(event)]
         self.assertEqual(len(results), 1)
