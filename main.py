@@ -1126,6 +1126,7 @@ class TypeSafeAutoReplyPlugin(Star):
             ("console/qa/save", self._api_qa_save, ["POST"], "保存某个作用域的问答表"),
             ("console/qa/import", self._api_qa_import, ["POST"], "从 KeyReply 数据文件导入"),
             ("console/qa/test", self._api_qa_test, ["POST"], "测试一条消息的命中结果"),
+            ("console/qa/delete", self._api_qa_delete, ["POST"], "删除一张问答表"),
         )
         for path, handler, methods, desc in routes:
             try:
@@ -1494,17 +1495,8 @@ class TypeSafeAutoReplyPlugin(Star):
     # ── 固定问答表 API ────────────────────────────────────
     async def _api_qa_list(self) -> dict:
         """返回全部问答表、作用域摘要与导入候选路径。"""
-        tables = []
-        for t in self.qa_store.all_tables():
-            tables.append({
-                "scope": t.scope,
-                "scope_id": t.scope_id,
-                "key": t.key,
-                "label": t.label,
-                "entries": t.entries,
-            })
         return {
-            "tables": tables,
+            "tables": self.qa_store.table_list(),
             "summary": self.qa_store.scope_summary(),
             "data_file": str(self.qa_store.path),
             "import_candidates": self.qa_store.find_keyreply_files(),
@@ -1526,26 +1518,53 @@ class TypeSafeAutoReplyPlugin(Star):
         scope = str(payload.get("scope") or SCOPE_GLOBAL)
         scope_id = str(payload.get("scope_id") or "").strip()
         entries = payload.get("entries")
+        table_key = str(payload.get("key") or "").strip() or None
+        name = payload.get("name")
+        raw_ids = payload.get("ids")
 
         if scope not in (SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE):
             return {"message": f"未知作用域: {scope}"}, 400
-        if scope in (SCOPE_GROUP, SCOPE_PRIVATE) and not scope_id:
-            return {"message": "群聊/私聊专属表必须提供 scope_id"}, 400
         if not isinstance(entries, list):
             return {"message": "entries 必须是数组"}, 400
 
-        table = self.qa_store.replace_table(scope, scope_id, entries)
+        # 多群一域：ids 为服务 ID 列表；未传时退回单个 scope_id
+        ids: Optional[list] = None
+        if isinstance(raw_ids, list):
+            ids = [str(x).strip() for x in raw_ids if str(x).strip()]
+        elif scope_id:
+            ids = [scope_id]
+
+        if scope in (SCOPE_GROUP, SCOPE_PRIVATE) and not ids:
+            return {"message": "群聊/私聊专属表至少需要一个 ID（群号或用户 QQ）"}, 400
+
+        table = self.qa_store.replace_table(
+            scope,
+            scope_id or (ids[0] if ids else ""),
+            entries,
+            ids=ids,
+            name=None if name is None else str(name),
+            key=table_key,
+        )
         # 保存时按答案指纹重新分组，使「多个 Q 指向同一个 A」在页面上可直接体现
         regroup_answers(table)
         if not self.qa_store.save():
             return {"message": "写入数据文件失败，请检查目录权限"}, 500
 
         logger.info(
-            f"[TypeSafe][QA] 已保存问答表 {table.label}，共 {len(table.entries)} 条"
+            f"[TypeSafe][QA] 已保存问答表 {table.label}，共 {len(table.entries)} 条，"
+            f"服务 {len(table.ids)} 个会话"
         )
         return {
             "message": "ok",
-            "table": {"scope": table.scope, "scope_id": table.scope_id, "entries": table.entries},
+            "table": {
+                "key": table.key,
+                "scope": table.scope,
+                "scope_id": table.scope_id,
+                "ids": list(table.ids),
+                "name": table.name,
+                "entries": table.entries,
+            },
+            "tables": self.qa_store.table_list(),
             "summary": self.qa_store.scope_summary(),
         }
 
@@ -1589,6 +1608,33 @@ class TypeSafeAutoReplyPlugin(Star):
                 f"{result.get('target_path')}（{result.get('message')}）"
             )
         return result, status
+
+    async def _api_qa_delete(self):
+        """删除一张问答表（按存储主键精确定位）。"""
+        from quart import request
+
+        payload = await request.get_json(silent=True) or {}
+        key = str(payload.get("key") or "").strip()
+        scope = str(payload.get("scope") or "")
+        scope_id = str(payload.get("scope_id") or "").strip()
+
+        if not key and not scope_id:
+            return {"message": "需要提供 key，或 scope + scope_id"}, 400
+        if key and key == SCOPE_GLOBAL:
+            return {"message": "全局默认表不可删除，可直接清空其内容"}, 400
+
+        ok = self.qa_store.delete_table_by_key(key) if key else self.qa_store.delete_table(scope, scope_id)
+        if not ok:
+            return {"message": "未找到对应的问答表"}, 404
+        if not self.qa_store.save():
+            return {"message": "写入数据文件失败，请检查目录权限"}, 500
+
+        logger.info(f"[TypeSafe][QA] 已删除问答表: {key or (scope + ':' + scope_id)}")
+        return {
+            "message": "ok",
+            "tables": self.qa_store.table_list(),
+            "summary": self.qa_store.scope_summary(),
+        }
 
     async def _api_qa_test(self):
         """测试一条消息在当前配置下的命中结果（不发送任何消息）。"""

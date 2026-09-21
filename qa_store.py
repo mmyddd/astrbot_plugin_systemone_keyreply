@@ -155,9 +155,18 @@ class QATable:
         scope_id: str = "",
         entries: Optional[List[dict]] = None,
         answers: Optional[Dict[str, Any]] = None,
+        ids: Optional[Iterable[str]] = None,
+        name: str = "",
     ):
         self.scope = scope
-        self.scope_id = str(scope_id or "")
+        # 一张表可服务多个会话 ID（多群一域）；scope_id 保留为首个 ID 以兼容旧数据
+        self.ids: List[str] = []
+        for raw in (ids if ids is not None else ([scope_id] if scope_id else [])):
+            text = str(raw).strip()
+            if text and text not in self.ids:
+                self.ids.append(text)
+        self.scope_id = self.ids[0] if self.ids else ""
+        self.name = str(name or "").strip()
         self.answers: Dict[str, Dict[str, Any]] = {}
         if isinstance(answers, dict):
             for key, raw in answers.items():
@@ -210,19 +219,34 @@ class QATable:
 
     @property
     def key(self) -> str:
+        """存储主键：沿用历史形态（scope 或 scope:首个ID），保证既有数据文件可直接读取。"""
         return f"{self.scope}:{self.scope_id}" if self.scope_id else self.scope
 
     @property
     def label(self) -> str:
         if self.scope == SCOPE_GLOBAL:
             return SCOPE_LABELS[SCOPE_GLOBAL]
+        if self.name:
+            return self.name
         base = SCOPE_LABELS.get(self.scope, self.scope)
-        return f"{base} · {self.scope_id}"
+        if len(self.ids) > 1:
+            return f"{base} · {self.ids[0]} 等 {len(self.ids)} 个"
+        return f"{base} · {self.scope_id}" if self.scope_id else base
+
+    @property
+    def id_count(self) -> int:
+        return len(self.ids)
+
+    def serves(self, scope_id: str) -> bool:
+        """该表是否服务于给定会话 ID。"""
+        return str(scope_id or "") in self.ids
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "scope": self.scope,
             "scope_id": self.scope_id,
+            "ids": list(self.ids),
+            "name": self.name,
             "answers": self.answers,
             "entries": self.entries,
         }
@@ -290,7 +314,14 @@ class QAStore:
         scope_id = str(item.get("scope_id") or "")
         if scope == SCOPE_GLOBAL:
             scope_id = ""
-        return QATable(scope, scope_id, item.get("entries"), item.get("answers"))
+        # 兼容旧的单 ID 形态：没有 ids 字段时用 scope_id 构造
+        ids = item.get("ids")
+        if not isinstance(ids, list):
+            ids = [scope_id] if scope_id else []
+        return QATable(
+            scope, scope_id, item.get("entries"), item.get("answers"),
+            ids=ids, name=str(item.get("name") or ""),
+        )
 
     def _seed_examples(self) -> None:
         """首次运行时写入一条示例，让页面不至于空白。"""
@@ -325,9 +356,16 @@ class QAStore:
 
     # ── 查询 ──────────────────────────────────────────────
     def get_table(self, scope: str, scope_id: str = "") -> QATable:
-        """取得（必要时创建）指定作用域的表。"""
+        """取得（必要时创建）指定作用域的表。
+
+        若已存在服务该 ID 的表则直接复用，避免多群一域被拆成多张表。
+        """
         if scope == SCOPE_GLOBAL:
             scope_id = ""
+        if scope_id:
+            existing = self.find_table_by_id(scope, scope_id)
+            if existing is not None:
+                return existing
         key = f"{scope}:{scope_id}" if scope_id else scope
         table = self.tables.get(key)
         if table is None:
@@ -337,21 +375,39 @@ class QAStore:
 
     def has_table(self, scope: str, scope_id: str = "") -> bool:
         if scope == SCOPE_GLOBAL:
-            scope_id = ""
-        key = f"{scope}:{scope_id}" if scope_id else scope
-        return key in self.tables
+            return SCOPE_GLOBAL in self.tables
+        if not scope_id:
+            return False
+        return self.find_table_by_id(scope, scope_id) is not None
+
+    def get_table_by_key(self, key: str) -> Optional[QATable]:
+        """按存储主键取表（页面用它精确指向某一张表）。"""
+        return self.tables.get(str(key or ""))
 
     def _candidate_tables(self, scope: str, scope_id: str = "") -> List["QATable"]:
-        """按优先级排列候选表：专属表在前，全局默认表兜底。"""
+        """按优先级排列候选表：命中的专属表在前，全局默认表兜底。
+
+        专属表按 ids 匹配，因此一张表可以同时服务多个群（多群一域）。
+        """
         ordered: List[QATable] = []
         if scope in (SCOPE_GROUP, SCOPE_PRIVATE) and scope_id:
-            own = self.tables.get(f"{scope}:{scope_id}")
-            if own is not None:
-                ordered.append(own)
+            for table in self.tables.values():
+                if table.scope == scope and table.serves(scope_id):
+                    ordered.append(table)
         global_table = self.tables.get(SCOPE_GLOBAL)
         if global_table is not None:
             ordered.append(global_table)
         return ordered
+
+    def find_table_by_id(self, scope: str, scope_id: str) -> Optional["QATable"]:
+        """按会话 ID 找到服务于它的专属表。"""
+        target = str(scope_id or "").strip()
+        if not target:
+            return None
+        for table in self.tables.values():
+            if table.scope == scope and table.serves(target):
+                return table
+        return None
 
     def find_all_replies(self, message: str, scope: str, scope_id: str = "") -> List[Dict[str, Any]]:
         """Regex recall: return every entry whose question pattern matches the message.
@@ -433,15 +489,37 @@ class QAStore:
         )
 
     def scope_summary(self) -> Dict[str, Any]:
-        groups = [t.scope_id for t in self.tables.values() if t.scope == SCOPE_GROUP and t.scope_id]
-        privates = [t.scope_id for t in self.tables.values() if t.scope == SCOPE_PRIVATE and t.scope_id]
+        groups: List[str] = []
+        privates: List[str] = []
+        for t in self.tables.values():
+            if t.scope == SCOPE_GROUP:
+                groups.extend(t.ids)
+            elif t.scope == SCOPE_PRIVATE:
+                privates.extend(t.ids)
         global_table = self.tables.get(SCOPE_GLOBAL)
         return {
             "global_entries": len(global_table.entries) if global_table else 0,
-            "groups": sorted(groups),
-            "privates": sorted(privates),
+            "groups": sorted(set(groups)),
+            "privates": sorted(set(privates)),
             "total_entries": sum(len(t.entries) for t in self.tables.values()),
+            "table_count": len(self.tables),
         }
+
+    def table_list(self) -> List[Dict[str, Any]]:
+        """供页面使用的表清单：每张表带上 ids 与 name。"""
+        return [
+            {
+                "key": t.key,
+                "scope": t.scope,
+                "scope_id": t.scope_id,
+                "ids": list(t.ids),
+                "name": t.name,
+                "label": t.label,
+                "entries": t.entries,
+                "is_global": t.scope == SCOPE_GLOBAL,
+            }
+            for t in self.all_tables()
+        ]
 
     # ── 变更 ──────────────────────────────────────────────
     def replace_table(
@@ -450,9 +528,30 @@ class QAStore:
         scope_id: str,
         entries: Iterable[Any],
         answers: Optional[Dict[str, Any]] = None,
+        ids: Optional[Iterable[str]] = None,
+        name: Optional[str] = None,
+        key: Optional[str] = None,
     ) -> QATable:
-        """整体替换某个作用域的表内容（含答案池）。"""
-        table = self.get_table(scope, scope_id)
+        """整体替换某张表的内容（含答案池、服务 ID 列表与名称）。
+
+        key 给定时按存储主键精确指向目标表，避免改 ID 列表时找不到原表。
+        """
+        table = None
+        if key:
+            table = self.tables.get(str(key))
+        if table is None:
+            table = self.get_table(scope, scope_id)
+
+        if ids is not None:
+            table.ids = []
+            for raw in ids:
+                text = str(raw).strip()
+                if text and text not in table.ids:
+                    table.ids.append(text)
+            table.scope_id = table.ids[0] if table.ids else ""
+        if name is not None:
+            table.name = str(name).strip()
+
         table.entries = []
         for item in entries or []:
             norm = normalize_entry(item)
@@ -468,16 +567,30 @@ class QAStore:
         # 清理已不存在的 answer_key 引用，避免悬空
         valid = set(table.answers.keys())
         for entry in table.entries:
-            key = str(entry.get("answer_key") or "").strip()
-            if key and key not in valid:
+            k = str(entry.get("answer_key") or "").strip()
+            if k and k not in valid:
                 entry.pop("answer_key", None)
+
+        # ID 列表变更后重新挂载存储键（旧键若与当前表不一致则迁移）
+        old_key = str(key) if key else None
+        new_key = table.key
+        if old_key and old_key != new_key:
+            self.tables.pop(old_key, None)
+        self.tables[new_key] = table
         return table
 
-    def delete_table(self, scope: str, scope_id: str = "") -> bool:
+    def delete_table(self, scope: str, scope_id: str = "", key: Optional[str] = None) -> bool:
+        if key and str(key) in self.tables:
+            return self.tables.pop(str(key), None) is not None
         if scope == SCOPE_GLOBAL:
             scope_id = ""
-        key = f"{scope}:{scope_id}" if scope_id else scope
-        return self.tables.pop(key, None) is not None
+        target = self.find_table_by_id(scope, scope_id) if scope_id else self.tables.get(scope)
+        if target is None:
+            return False
+        return self.tables.pop(target.key, None) is not None
+
+    def delete_table_by_key(self, key: str) -> bool:
+        return self.tables.pop(str(key or ""), None) is not None
 
     # ── KeyReply 导入 ─────────────────────────────────────
     @staticmethod

@@ -142,16 +142,11 @@
         <div class="card">
           <div class="card-head">
             <div>
-              <h2>作用域</h2>
-              <p>每个群 / 每个私聊可拥有独立问答表；未单独配置的会话回退到全局默认表</p>
+              <h2>问答表</h2>
+              <p>一张表可同时服务多个群（多群一域）；未单独配置的会话回退到全局默认表。点表格子上的 ⋯ 可编辑服务范围</p>
             </div>
             <div class="card-head-right">
-              <select class="select" id="qa-new-kind" style="width:auto">
-                <option value="group">群聊</option>
-                <option value="private">私聊</option>
-              </select>
-              <input class="input" id="qa-new-id" type="text" placeholder="群号 / QQ" style="width:140px">
-              <button class="btn btn-ghost btn-sm" type="button" id="qa-add-scope">新建作用域</button>
+              <button class="btn btn-ghost btn-sm" type="button" id="qa-add-scope">+ 新建群配置</button>
             </div>
           </div>
           <div class="card-body">
@@ -310,6 +305,50 @@
 
     </div>
   </main>
+</div>
+
+<div class="modal" id="qa-cfg-modal" role="dialog" aria-modal="true" aria-labelledby="qa-cfg-title" hidden>
+  <div class="modal-card modal-card-sm">
+    <header class="modal-head">
+      <div>
+        <h2 id="qa-cfg-title">编辑群配置</h2>
+        <p>这张问答表会同时服务下面列出的所有群</p>
+      </div>
+      <button class="icon-btn" type="button" id="qa-cfg-close" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"></path>
+        </svg>
+      </button>
+    </header>
+    <div class="modal-body">
+      <div class="field">
+        <div class="field-head">
+          <label class="field-label" for="qa-cfg-name">配置名称（可选）</label>
+          <span class="field-hint">留空则自动显示为「群聊表 · 群号」</span>
+        </div>
+        <input class="input" id="qa-cfg-name" type="text" placeholder="例如：技术交流群组">
+      </div>
+
+      <div class="field" style="margin-top:14px">
+        <div class="field-head">
+          <label class="field-label" for="qa-cfg-id">服务群号</label>
+          <span class="field-hint">支持一次粘贴多个（换行或逗号分隔）</span>
+        </div>
+        <div class="qa-import-row">
+          <input class="input input-mono" id="qa-cfg-id" type="text" placeholder="输入群号后按回车或点添加">
+          <button class="btn btn-primary btn-sm" type="button" id="qa-cfg-add">添加</button>
+        </div>
+        <div class="chip-group" id="qa-cfg-ids" style="margin-top:10px"></div>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn btn-danger btn-sm" type="button" id="qa-cfg-del" hidden>删除此表</button>
+      <div class="modal-foot-right">
+        <button class="btn btn-ghost" type="button" id="qa-cfg-cancel">取消</button>
+        <button class="btn btn-primary" type="button" id="qa-cfg-save">保存</button>
+      </div>
+    </footer>
+  </div>
 </div>
 
 <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>

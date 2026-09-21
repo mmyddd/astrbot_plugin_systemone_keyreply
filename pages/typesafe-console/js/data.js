@@ -124,7 +124,8 @@
     qaList() { return api.get('console/qa/list'); },
     qaSave(payload) { return api.post('console/qa/save', payload); },
     qaImport(payload) { return api.post('console/qa/import', payload); },
-    qaTest(payload) { return api.post('console/qa/test', payload); }
+    qaTest(payload) { return api.post('console/qa/test', payload); },
+    qaDelete(payload) { return api.post('console/qa/delete', payload); }
   };
 
   /* ── 状态容器 ─────────────────────────────────────────── */
@@ -139,7 +140,7 @@
     tryRecent: [],
     tryResult: null,
     qa: null,
-    qaScope: { scope: 'global', scope_id: '' },
+    qaTableKey: 'global',
     qaDraft: [],
     qaDirty: false,
     qaTestResult: null,

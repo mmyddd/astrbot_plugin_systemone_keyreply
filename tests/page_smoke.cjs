@@ -64,7 +64,8 @@ for (const id of ['config-sections','toast-stack','status-body','try-result','tr
   'save-btn','refresh-btn','theme-toggle','probe-btn','probe-result','try-btn','try-input','try-add-recent',
   'data-status','theme-color','reload-defaults','try-recent-host',
   'qa-rows','qa-save-btn','qa-scope-bar','qa-mode-bar','qa-import-path','qa-import-btn','qa-add-row',
-  'qa-add-scope','qa-test-input','qa-test-btn','qa-test-result','qa-nav-dirty','qa-new-kind','qa-new-id','qa-import-hint']) {
+  'qa-add-scope','qa-test-input','qa-test-btn','qa-test-result','qa-nav-dirty','qa-new-kind','qa-new-id','qa-import-hint',
+  'qa-cfg-modal','qa-cfg-title','qa-cfg-name','qa-cfg-id','qa-cfg-ids','qa-cfg-add','qa-cfg-save','qa-cfg-cancel','qa-cfg-close','qa-cfg-del']) {
   const n = makeEl('div'); n.id = id; n.setAttribute('id', id); hosts['#' + id] = n; ROOT.appendChild(n);
 }
 
@@ -160,54 +161,90 @@ t('renderTryResult 三种分支', () => {
 t('renderRecent 增删', () => { TS.state.tryRecent = [{sender:'A',text:'hi'}]; TS.views.renderRecent(); TS.state.tryRecent = []; TS.views.renderRecent(); });
 
 /* ── 固定问答表视图 ─────────────────────────────────── */
-t('qa.render 作用域与行渲染', () => {
-  TS.state.qa = {
-    tables: [
-      { key: 'global', scope: 'global', scope_id: '', entries: [
+const qaFixture = () => ({
+  tables: [
+    { key: 'global', scope: 'global', scope_id: '', ids: [], name: '', label: '全局默认表',
+      entries: [
         { question: '怎么安装%', answer: { text: '统一答案', images: [] }, enabled: true },
         { question: '%如何安装%', answer: { text: '统一答案', images: [] }, enabled: true }
       ]},
-      { key: 'group:111', scope: 'group', scope_id: '111', entries: [
-        { question: '群专属问题', answer: { text: '群专属答案', images: [] }, enabled: true }
-      ]}
-    ],
-    summary: { global_entries: 2, groups: ['111'], privates: [], total_entries: 3 },
-    import_candidates: [], configured_import_path: '', use_qa_table: true,
-    enable_jev_topic: true, mode: 'jev', mode_label: 'Jev 话题模式', qa_min_confidence: '中',
-    context_message_count: 3
-  };
-  TS.state.qaScope = { scope: 'global', scope_id: '' };
+    { key: 'group:111', scope: 'group', scope_id: '111', ids: ['111', '222'], name: '技术群组',
+      label: '技术群组',
+      entries: [{ question: '群专属问题', answer: { text: '群专属答案', images: [] }, enabled: true }]},
+    { key: 'group:333', scope: 'group', scope_id: '333', ids: ['333'], name: '',
+      label: '群聊表 · 333',
+      entries: [] }
+  ],
+  summary: { global_entries: 2, groups: ['111', '222', '333'], privates: [], total_entries: 3, table_count: 3 },
+  import_candidates: [], configured_import_path: '', data_file: '/tmp/qa_tables.json',
+  use_qa_table: true, enable_jev_topic: true, mode: 'jev', mode_label: 'Jev 话题模式',
+  qa_min_confidence: '中', context_message_count: 3
+});
+
+t('qa.render 表列表与行渲染', () => {
+  TS.state.qa = qaFixture();
+  TS.state.qaTableKey = 'global';
   TS.qa.loadDraft();
-  const rows = hosts['#qa-rows'].children;
-  if (!rows.length) throw new Error('未渲染任何问答分组');
-  const scopeBar = hosts['#qa-scope-bar'].children;
-  if (!scopeBar.length) throw new Error('未渲染作用域切换');
-  const modeBar = hosts['#qa-mode-bar'].children;
-  if (!modeBar.length) throw new Error('未渲染模式条');
+  if (!hosts['#qa-rows'].children.length) throw new Error('未渲染任何问答分组');
+  if (!hosts['#qa-scope-bar'].children.length) throw new Error('未渲染问答表列表');
+  if (!hosts['#qa-mode-bar'].children.length) throw new Error('未渲染模式条');
+});
+
+t('qa 行默认折叠', () => {
+  const items = [];
+  const walk = n => { for (const c of n.children) { items.push(c); walk(c); } };
+  walk(hosts['#qa-rows']);
+  const details = items.filter(n => n.tagName === 'DETAILS');
+  if (!details.length) throw new Error('未找到可折叠条目');
+  if (details.some(d => d.open === true)) throw new Error('存在默认展开的条目');
+});
+
+t('qa 折叠态只展示 Q 与 A', () => {
+  const items = [];
+  const walk = n => { for (const c of n.children) { items.push(c); walk(c); } };
+  walk(hosts['#qa-rows']);
+  const d = items.filter(n => n.tagName === 'DETAILS')[0];
+  const summary = d.children.find(c => c.tagName === 'SUMMARY');
+  if (!summary) throw new Error('折叠条目缺少 summary');
+  const textOf = n => {
+    let out = n.textContent || '';
+    for (const c of n.children) out += textOf(c);
+    return out;
+  };
+  const label = textOf(summary);
+  if (label.indexOf('怎么安装%') < 0) throw new Error('折叠摘要未显示问题：' + label);
+  if (label.indexOf('统一答案') < 0) throw new Error('折叠摘要未显示答案：' + label);
 });
 
 t('qa 多 Q 一 A 归组', () => {
-  // 两条 Q 共用同一答案 -> 应渲染为一个分组
   const groups = hosts['#qa-rows'].children.filter(
     n => n.className && String(n.className).indexOf('qa-group') >= 0
   );
   if (groups.length !== 1) throw new Error('期望 1 个分组，实际 ' + groups.length);
 });
 
-t('qa 切换到群作用域', () => {
-  TS.state.qaScope = { scope: 'group', scope_id: '111' };
+t('qa 多群一域：一张表含多个 ID', () => {
+  TS.state.qaTableKey = 'group:111';
   TS.qa.loadDraft();
-  const groups = hosts['#qa-rows'].children.filter(
-    n => n.className && String(n.className).indexOf('qa-group') >= 0
-  );
-  if (!groups.length) throw new Error('群作用域未渲染');
+  const t = TS.state.qa.tables.find(x => x.key === 'group:111');
+  if (!t || t.ids.length !== 2) throw new Error('多 ID 表未保留 ids');
+  if (!hosts['#qa-rows'].children.length) throw new Error('群表未渲染');
+});
+
+t('qa 打开群配置弹窗', () => {
+  const modal = hosts['#qa-cfg-modal'];
+  if (!modal) throw new Error('缺少弹窗容器');
+  TS.qa.openTableConfig(TS.state.qa.tables.find(x => x.key === 'group:111'));
+  if (modal.hasAttribute && modal.hasAttribute('hidden')) throw new Error('弹窗未打开');
+  const idsHost = hosts['#qa-cfg-ids'];
+  if (!idsHost.children.length) throw new Error('未渲染 ID 列表');
+  TS.qa.closeTableConfig();
 });
 
 t('qa 空表渲染占位', () => {
-  TS.state.qaScope = { scope: 'private', scope_id: '999' };
+  TS.state.qaTableKey = 'group:333';
   TS.qa.loadDraft();
-  const kids = hosts['#qa-rows'].children;
-  if (!kids.length) throw new Error('空表未渲染任何内容');
+  if (!hosts['#qa-rows'].children.length) throw new Error('空表未渲染占位');
 });
 
 console.log('脚本加载错误: ' + (errors.length ? errors.join(' | ') : '(无)'));

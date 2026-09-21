@@ -11,22 +11,39 @@
   let uid = 0;
   const nextId = () => 'qa' + (++uid);
 
-  /* ── 作用域 ───────────────────────────────────────────── */
-  function scopeKey(s) { return s.scope_id ? s.scope + ':' + s.scope_id : s.scope; }
-
-  function currentScope() { return state.qaScope || { scope: 'global', scope_id: '' }; }
-
-  function tableFor(scope, scopeId) {
+  /* ── 表选择 ───────────────────────────────────────────── */
+  function currentTable() {
     const data = state.qa;
     if (!data) return null;
-    const key = scopeId ? scope + ':' + scopeId : scope;
-    return (data.tables || []).find(t => t.key === key) || null;
+    const key = state.qaTableKey;
+    const list = data.tables || [];
+    return list.find(t => t.key === key) || list.find(t => t.key === 'global') || list[0] || null;
+  }
+
+  function currentScope() {
+    const t = currentTable();
+    if (!t) return { scope: 'global', scope_id: '' };
+    return { scope: t.scope, scope_id: t.scope_id, key: t.key };
+  }
+
+  function tableIcon(t) {
+    if (!t || t.scope === 'global') return '全局';
+    return t.scope === 'group' ? '群' : '私聊';
+  }
+
+  function tableTitle(t) {
+    if (!t) return '—';
+    if (t.scope === 'global') return '全局默认表';
+    if (t.name) return t.name;
+    const base = t.scope === 'group' ? '群聊表' : '私聊表';
+    if (t.ids.length === 1) return base + ' · ' + t.ids[0];
+    return base + ' · ' + t.ids[0] + ' 等 ' + t.ids.length + ' 个会话';
   }
 
   /* ── 草稿 ─────────────────────────────────────────────── */
   function loadDraft() {
-    const s = currentScope();
-    const table = tableFor(s.scope, s.scope_id);
+    const table = currentTable();
+    state.qaTableKey = table ? table.key : 'global';
     state.qaDraft = (table && table.entries ? table.entries : []).map(e => ({
       _id: nextId(),
       question: e.question || '',
@@ -62,31 +79,43 @@
     if (!host) return;
     host.textContent = '';
     const data = state.qa || {};
-    const summary = data.summary || {};
-    const cur = currentScope();
+    const tables = data.tables || [];
+    const cur = currentTable();
 
     const list = el('div', 'chip-group');
-    const options = [{ scope: 'global', scope_id: '', label: '全局默认表', count: summary.global_entries || 0 }];
-    (summary.groups || []).forEach(g => {
-      const t = tableFor('group', g);
-      options.push({ scope: 'group', scope_id: g, label: '群 ' + g, count: t ? t.entries.length : 0 });
-    });
-    (summary.privates || []).forEach(p => {
-      const t = tableFor('private', p);
-      options.push({ scope: 'private', scope_id: p, label: '私聊 ' + p, count: t ? t.entries.length : 0 });
-    });
-
-    options.forEach(opt => {
-      const active = opt.scope === cur.scope && String(opt.scope_id) === String(cur.scope_id);
-      const chip = el('label', 'chip' + (active ? ' is-checked' : ''));
-      chip.appendChild(el('span', null, opt.label + ' · ' + opt.count + ' 条'));
+    tables.forEach(t => {
+      const active = cur && t.key === cur.key;
+      const chip = el('label', 'chip qa-scope-chip' + (active ? ' is-checked' : ''));
+      chip.appendChild(el('span', 'qa-scope-kind', tableIcon(t)));
+      chip.appendChild(el('span', 'qa-scope-name', tableTitle(t)));
+      chip.appendChild(el('span', 'qa-scope-count', t.entries.length + ' 条'));
       chip.addEventListener('click', () => {
-        if (state.qaDirty && !window.confirm('当前改动尚未保存，切换作用域将丢弃这些改动。继续？')) return;
-        state.qaScope = { scope: opt.scope, scope_id: opt.scope_id };
+        if (state.qaDirty && !window.confirm('当前改动尚未保存，切换问答表将丢弃这些改动。继续？')) return;
+        state.qaTableKey = t.key;
         loadDraft();
       });
+
+      // 每张非全局表都提供一个「配置群」入口，用于编辑服务范围与名称
+      if (t.scope !== 'global') {
+        const cfg = el('button', 'qa-scope-cfg', '⋯');
+        cfg.type = 'button';
+        cfg.title = '打开群配置';
+        cfg.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          ev.preventDefault();
+          openTableConfig(t);
+        });
+        chip.appendChild(cfg);
+      }
       list.appendChild(chip);
     });
+
+    // 多群一域入口
+    const add = el('button', 'btn btn-ghost btn-sm', '+ 新建群配置');
+    add.type = 'button';
+    add.addEventListener('click', () => openTableConfig(null));
+    list.appendChild(add);
+
     host.appendChild(list);
   }
 
@@ -111,47 +140,68 @@
     let idx = 0;
     groups.forEach(rows => {
       const wrap = el('div', 'qa-group');
-      const head = el('div', 'qa-group-head');
-      head.appendChild(el('span', 'qa-group-title',
-        rows.length > 1 ? rows.length + ' 个问题共用同一答案' : '1 个问题'));
-      if (rows.length > 1) head.appendChild(el('span', 'pill pill-brand', '多 Q 一 A'));
-      wrap.appendChild(head);
-
+      // 仅当确实存在共享答案时才显示分组头，单条 Q 不额外占位
+      if (rows.length > 1) {
+        const head = el('div', 'qa-group-head');
+        head.appendChild(el('span', 'pill pill-brand', '多 Q 一 A'));
+        head.appendChild(el('span', 'qa-group-title', rows.length + ' 个问题共用同一答案'));
+        wrap.appendChild(head);
+      }
       rows.forEach(row => wrap.appendChild(buildRow(row, idx++)));
       host.appendChild(wrap);
     });
   }
 
   function buildRow(row, index) {
-    const box = el('div', 'qa-row' + (row.enabled === false ? ' is-disabled' : ''));
+    // 默认折叠：折叠态只显示 Q 与 A，点击展开才出现全部编辑控件
+    const item = el('details', 'qa-item' + (row.enabled === false ? ' is-disabled' : ''));
+    item.open = Boolean(row._expand);
+
+    /* ── 折叠摘要：只显示 Q 与 A ── */
+    const summary = el('summary', 'qa-item-summary');
+    summary.appendChild(el('span', 'qa-item-index', '#' + (index + 1)));
+    if (row.enabled === false) summary.appendChild(el('span', 'pill pill-mute', '已停用'));
+
+    const texts = el('span', 'qa-item-texts');
+    const qSpan = el('span', 'qa-item-q', row.question || '（未填写问题）');
+    const aSpan = el('span', 'qa-item-a', row.answerText || '（未填写答案）');
+    texts.appendChild(qSpan);
+    texts.appendChild(aSpan);
+    summary.appendChild(texts);
+    summary.appendChild(el('span', 'qa-item-chevron'));
+    item.appendChild(summary);
+
+    /* ── 展开区：编辑控件 ── */
+    const body = el('div', 'qa-item-body');
 
     const head = el('div', 'qa-row-head');
-    head.appendChild(el('span', 'qa-row-index', '#' + (index + 1)));
-
-    const toggle = el('label', 'switch');
+    const toggleWrap = el('label', 'switch');
     const cb = el('input');
     cb.type = 'checkbox';
     cb.checked = row.enabled !== false;
     cb.addEventListener('change', () => {
       row.enabled = cb.checked;
       state.qaDirty = true;
-      box.classList.toggle('is-disabled', !cb.checked);
+      item.classList.toggle('is-disabled', !cb.checked);
       updateDirty();
     });
-    toggle.appendChild(cb);
-    toggle.appendChild(el('span', 'switch-track'));
-    head.appendChild(toggle);
+    toggleWrap.appendChild(cb);
+    toggleWrap.appendChild(el('span', 'switch-track'));
+    head.appendChild(toggleWrap);
+    head.appendChild(el('span', 'field-meta', '启用该条'));
 
-    const del = el('button', 'btn btn-ghost btn-sm', '删除');
+    const del = el('button', 'btn btn-danger btn-sm', '删除');
     del.type = 'button';
-    del.addEventListener('click', () => {
+    del.style.marginLeft = 'auto';
+    del.addEventListener('click', (ev) => {
+      ev.preventDefault();
       state.qaDraft = state.qaDraft.filter(r => r !== row);
       state.qaDirty = true;
       renderRows();
       updateDirty();
     });
     head.appendChild(del);
-    box.appendChild(head);
+    body.appendChild(head);
 
     // Q
     const qField = el('div', 'field');
@@ -163,9 +213,14 @@
     qInput.type = 'text';
     qInput.value = row.question;
     qInput.placeholder = '用户可能怎么问';
-    qInput.addEventListener('input', () => { row.question = qInput.value; state.qaDirty = true; updateDirty(); });
+    qInput.addEventListener('input', () => {
+      row.question = qInput.value;
+      qSpan.textContent = row.question || '（未填写问题）';
+      state.qaDirty = true;
+      updateDirty();
+    });
     qField.appendChild(qInput);
-    box.appendChild(qField);
+    body.appendChild(qField);
 
     // A
     const aField = el('div', 'field');
@@ -174,7 +229,12 @@
     aArea.rows = 2;
     aArea.value = row.answerText;
     aArea.placeholder = '命中后由 LLM 围绕这段内容生成回复';
-    aArea.addEventListener('input', () => { row.answerText = aArea.value; state.qaDirty = true; updateDirty(); });
+    aArea.addEventListener('input', () => {
+      row.answerText = aArea.value;
+      aSpan.textContent = row.answerText || '（未填写答案）';
+      state.qaDirty = true;
+      updateDirty();
+    });
     aField.appendChild(aArea);
 
     const imgDetails = el('details', 'qa-images');
@@ -186,11 +246,11 @@
     imgArea.addEventListener('input', () => { row.answerImages = imgArea.value; state.qaDirty = true; updateDirty(); });
     imgDetails.appendChild(imgArea);
     aField.appendChild(imgDetails);
-    box.appendChild(aField);
+    body.appendChild(aField);
 
-    return box;
+    item.appendChild(body);
+    return item;
   }
-
   function updateDirty() {
     const btn = $('#qa-save-btn');
     if (btn) btn.disabled = !state.qaDirty;
@@ -221,6 +281,123 @@
     } else {
       const tip = el('span', 'field-meta', '问答表暂不生效，可在「配置中心 → 固定问答表」切换回复来源。');
       host.appendChild(tip);
+    }
+  }
+
+  /* ── 群配置弹窗（多群一域）────────────────────────────── */
+  let editingKey = null;
+  let editingIds = [];
+  let editingName = '';
+
+  function openTableConfig(table) {
+    editingKey = table ? table.key : null;
+    editingIds = table ? table.ids.slice() : [];
+    editingName = table ? (table.name || '') : '';
+    const modal = $('#qa-cfg-modal');
+    if (!modal) return;
+    modal.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+    const title = $('#qa-cfg-title');
+    if (title) title.textContent = table ? '编辑群配置' : '新建群配置';
+    const delBtn = $('#qa-cfg-del');
+    if (delBtn) TS.show(delBtn, Boolean(table));
+    const nameInput = $('#qa-cfg-name');
+    if (nameInput) nameInput.value = editingName;
+    const idInput = $('#qa-cfg-id');
+    if (idInput) { idInput.value = ''; idInput.focus(); }
+    renderIdChips();
+  }
+
+  function closeTableConfig() {
+    const modal = $('#qa-cfg-modal');
+    if (modal) modal.setAttribute('hidden', '');
+    document.body.style.overflow = '';
+  }
+
+  function renderIdChips() {
+    const host = $('#qa-cfg-ids');
+    if (!host) return;
+    host.textContent = '';
+    if (!editingIds.length) {
+      host.appendChild(el('span', 'field-meta', '尚未添加任何群号，至少添加一个才能保存'));
+      return;
+    }
+    editingIds.forEach(id => {
+      const chip = el('span', 'chip is-checked qa-id-chip');
+      chip.appendChild(el('span', null, id));
+      const x = el('button', 'qa-id-remove', '×');
+      x.type = 'button';
+      x.addEventListener('click', () => {
+        editingIds = editingIds.filter(v => v !== id);
+        renderIdChips();
+      });
+      chip.appendChild(x);
+      host.appendChild(chip);
+    });
+  }
+
+  function addIdFromInput() {
+    const input = $('#qa-cfg-id');
+    if (!input) return;
+    const value = input.value.trim();
+    if (!value) return;
+    if (editingIds.indexOf(value) >= 0) {
+      TS.toast('该 ID 已在列表中', 'err');
+      return;
+    }
+    // 支持一次粘贴多个（换行/逗号分隔），便于批量配置多群
+    format.lines(value).forEach(v => {
+      if (editingIds.indexOf(v) < 0) editingIds.push(v);
+    });
+    input.value = '';
+    renderIdChips();
+  }
+
+  async function saveTableConfig() {
+    const nameInput = $('#qa-cfg-name');
+    const name = nameInput ? nameInput.value.trim() : '';
+    if (!editingIds.length) {
+      TS.toast('请至少添加一个群号', 'err');
+      return;
+    }
+
+    const btn = $('#qa-cfg-save');
+    if (btn) btn.classList.add('is-busy');
+    try {
+      const entries = editingKey
+        ? ((currentTable() && currentTable().entries) || [])
+        : [];
+      const result = await TS.api.qaSave({
+        key: editingKey || undefined,
+        scope: 'group',
+        ids: editingIds,
+        name: name,
+        entries: entries
+      });
+      state.qaTableKey = (result && result.table && result.table.key) || editingKey;
+      state.qaDirty = false;
+      closeTableConfig();
+      TS.toast(editingKey ? '群配置已更新' : '群配置已创建', 'ok');
+      await load();
+    } catch (error) {
+      TS.toast('保存失败：' + (error && error.message ? error.message : error), 'err');
+    } finally {
+      if (btn) btn.classList.remove('is-busy');
+    }
+  }
+
+  async function deleteTable() {
+    if (!editingKey) return;
+    if (!window.confirm('删除这张问答表？其中的问答对将一并移除。')) return;
+    try {
+      await TS.api.qaDelete({ key: editingKey });
+      state.qaTableKey = 'global';
+      state.qaDirty = false;
+      closeTableConfig();
+      TS.toast('问答表已删除', 'ok');
+      await load();
+    } catch (error) {
+      TS.toast('删除失败：' + (error && error.message ? error.message : error), 'err');
     }
   }
 
@@ -279,9 +456,13 @@
     if (btn) btn.classList.add('is-busy');
     try {
       const s = currentScope();
+      const t = currentTable();
       await TS.api.qaSave({
+        key: s.key,
         scope: s.scope,
         scope_id: s.scope_id,
+        ids: t ? t.ids : (s.scope_id ? [s.scope_id] : []),
+        name: t ? t.name : '',
         entries: collectDraft()
       });
       state.qaDirty = false;
@@ -359,26 +540,6 @@
     }
   }
 
-  function addScope() {
-    const kind = $('#qa-new-kind') ? $('#qa-new-kind').value : 'group';
-    const idInput = $('#qa-new-id');
-    const id = idInput ? idInput.value.trim() : '';
-    if (!id) { TS.toast('请填写群号或用户 QQ', 'err'); return; }
-    state.qaScope = { scope: kind, scope_id: id };
-    state.qaDraft = [];
-    state.qaDirty = true;
-    // 先把空表登记到本地视图，保存时后端会创建
-    if (state.qa && !tableFor(kind, id)) {
-      state.qa.tables = (state.qa.tables || []).concat([{ key: kind + ':' + id, scope: kind, scope_id: id, entries: [] }]);
-      const summary = state.qa.summary = state.qa.summary || {};
-      if (kind === 'group') summary.groups = (summary.groups || []).concat([id]).sort();
-      else summary.privates = (summary.privates || []).concat([id]).sort();
-    }
-    if (idInput) idInput.value = '';
-    render();
-    TS.toast('已切换到新作用域，添加问答对后点保存即可创建', 'ok');
-  }
-
   /* ── 命中测试 ─────────────────────────────────────────── */
   async function runTest() {
     const input = $('#qa-test-input');
@@ -431,7 +592,7 @@
   function bind() {
     $('#qa-save-btn')?.addEventListener('click', () => save());
     $('#qa-add-row')?.addEventListener('click', () => {
-      state.qaDraft.push({ _id: nextId(), question: '', answerText: '', answerImages: '', enabled: true });
+      state.qaDraft.push({ _id: nextId(), question: '', answerText: '', answerImages: '', enabled: true, _expand: true });
       state.qaDirty = true;
       renderRows();
       updateDirty();
@@ -445,11 +606,23 @@
         else row.setAttribute('hidden', '');
       }
     });
-    $('#qa-add-scope')?.addEventListener('click', () => addScope());
     $('#qa-test-btn')?.addEventListener('click', () => runTest());
+    $('#qa-add-scope')?.addEventListener('click', () => openTableConfig(null));
+    $('#qa-cfg-close')?.addEventListener('click', () => closeTableConfig());
+    $('#qa-cfg-cancel')?.addEventListener('click', () => closeTableConfig());
+    $('#qa-cfg-save')?.addEventListener('click', () => saveTableConfig());
+    $('#qa-cfg-del')?.addEventListener('click', () => deleteTable());
+    $('#qa-cfg-add')?.addEventListener('click', () => addIdFromInput());
+    $('#qa-cfg-id')?.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); addIdFromInput(); }
+    });
   }
 
   Object.assign(TS, {
-    qa: { load: load, render: render, bind: bind, loadDraft: loadDraft }
+    qa: {
+      load: load, render: render, bind: bind, loadDraft: loadDraft,
+      openTableConfig: openTableConfig, closeTableConfig: closeTableConfig,
+      addIdFromInput: addIdFromInput
+    }
   });
 })();

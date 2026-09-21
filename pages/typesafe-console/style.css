@@ -471,7 +471,11 @@ svg { display: block; width: 100%; height: 100%; }
 /* ── 固定问答表 ─────────────────────────────────────────── */
 .qa-mode-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-.qa-import-row, .qa-test-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.qa-import-row, .qa-test-row { display: flex; gap: 8px; align-items: center; }
+/* 弹窗内的「群号 + 添加」必须同行，输入框占据剩余宽度但不换行 */
+.modal-body .qa-import-row { flex-wrap: nowrap; }
+.modal-body .qa-import-row .input { flex: 1 1 auto; min-width: 0; }
+.modal-body .qa-import-row .btn { flex: none; }
 .qa-import-row + .qa-import-row { margin-top: 8px; }
 .qa-replace-row {
   display: flex; align-items: flex-start; gap: 8px;
@@ -494,14 +498,7 @@ svg { display: block; width: 100%; height: 100%; }
 }
 .qa-group-title { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
 
-.qa-row { padding: 14px; border-bottom: 1px solid var(--line); }
-.qa-row:last-child { border-bottom: 0; }
-.qa-row.is-disabled { opacity: .5; }
 
-.qa-row-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.qa-row-index { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.qa-row-head .switch { margin-left: 0; }
-.qa-row-head .btn { margin-left: auto; }
 
 .qa-images { margin-top: 6px; }
 .qa-images > summary {
@@ -513,6 +510,119 @@ svg { display: block; width: 100%; height: 100%; }
 .qa-images[open] > summary::before { content: "▾ "; }
 .qa-images > summary:hover { color: var(--text); }
 .qa-images .textarea { margin-top: 6px; }
+
+
+/* ── 问答对：折叠列表 ───────────────────────────────────── */
+.qa-item { border-bottom: 1px solid var(--line); }
+.qa-item:last-child { border-bottom: 0; }
+
+.qa-item-summary {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px;
+  cursor: pointer;
+  list-style: none;
+  transition: background .14s ease;
+}
+.qa-item-summary::-webkit-details-marker { display: none; }
+.qa-item-summary:hover { background: var(--card-sunken); }
+.qa-item[open] > .qa-item-summary { background: var(--card-sunken); border-bottom: 1px solid var(--line); }
+
+.qa-item-index {
+  flex: none;
+  font-size: 11.5px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.qa-item.is-disabled .qa-item-summary { opacity: .55; }
+
+/* 折叠态：Q 与 A 各占一行，超出省略 */
+.qa-item-texts { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.qa-item-q {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.qa-item-a {
+  font-size: 12.5px; color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.qa-item-chevron { flex: none; width: 14px; height: 14px; color: var(--text-3); }
+.qa-item-chevron::before {
+  content: ""; display: block; width: 6px; height: 6px; margin: 3px 0 0 2px;
+  border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+  transform: rotate(-45deg); transition: transform .16s ease;
+}
+.qa-item[open] .qa-item-chevron::before { transform: rotate(45deg); margin-top: 1px; }
+
+.qa-item-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.qa-item-body .qa-row-head { margin-bottom: 0; gap: 8px; }
+/* 展开区内的开关不需要 auto 外边距，否则会把它推到行尾、与说明文字错位 */
+.qa-item-body .qa-row-head .switch { margin-left: 0; }
+
+
+/* ── 问答表选择与群配置弹窗 ─────────────────────────────── */
+.qa-scope-chip { gap: 6px; cursor: pointer; position: relative; padding-right: 8px; }
+.qa-scope-kind {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+  padding: 1px 5px; border-radius: var(--r-xs);
+  background: var(--card); color: var(--text-3);
+}
+.chip.is-checked .qa-scope-kind { background: var(--card); color: var(--brand); }
+.qa-scope-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qa-scope-count { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.chip.is-checked .qa-scope-count { color: var(--brand); }
+
+.qa-scope-cfg {
+  display: grid; place-items: center;
+  width: 20px; height: 20px; margin-left: 2px;
+  border-radius: 50%;
+  color: var(--text-3); font-size: 13px; line-height: 1;
+  transition: background .14s ease, color .14s ease;
+}
+.qa-scope-cfg:hover { background: var(--card); color: var(--brand); }
+
+.qa-id-chip { gap: 6px; padding-right: 6px; cursor: default; }
+.qa-id-remove {
+  display: grid; place-items: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  color: var(--text-3); font-size: 13px; line-height: 1;
+}
+.qa-id-remove:hover { background: var(--danger-soft); color: var(--danger); }
+
+/* 弹窗 */
+.modal {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  background: rgba(9, 12, 18, .5);
+  backdrop-filter: blur(3px);
+}
+.modal-card {
+  width: 100%; max-width: 520px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-3, var(--shadow-2));
+  animation: toast-in .18s ease;
+  max-height: calc(100vh - 40px);
+  display: flex; flex-direction: column;
+}
+.modal-card-sm { max-width: 480px; }
+.modal-head {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-head h2 { font-size: 15.5px; font-weight: 650; }
+.modal-head p { color: var(--text-3); font-size: 12.5px; margin-top: 2px; }
+.modal-head .icon-btn { margin-left: auto; flex: none; }
+.modal-body { padding: 18px 20px; overflow-y: auto; }
+.modal-foot {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--card-sunken);
+}
+.modal-foot-right { margin-left: auto; display: flex; gap: 8px; }
 
 /* ── 响应式 ─────────────────────────────────────────────── */
 @media (max-width: 900px) {
