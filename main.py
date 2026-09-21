@@ -198,11 +198,11 @@ def _mask_secret(value: object) -> str:
 
 
 @register(
-    "astrbot_plugin_typesafe_autoreply",
+    "astrbot_plugin_typesafe_keyreply",
     "AstrBot & TypeSafe Community",
     "使用 TypeSafe AI 判断聊天消息是否需要 AI 主动参与，并调用 AstrBot 已配置的大语言模型生成自然回复。",
     "1.0.5",
-    "https://github.com/mmyddd/astrbot_plugin_typesafe_autoreply",
+    "https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply",
 )
 class TypeSafeAutoReplyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -808,9 +808,9 @@ class TypeSafeAutoReplyPlugin(Star):
         try:
             from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-            base = Path(get_astrbot_data_path()) / "plugin_data" / "astrbot_plugin_typesafe_autoreply"
+            base = Path(get_astrbot_data_path()) / "plugin_data" / "astrbot_plugin_typesafe_keyreply"
         except Exception:
-            base = Path("data") / "plugin_data" / "astrbot_plugin_typesafe_autoreply"
+            base = Path("data") / "plugin_data" / "astrbot_plugin_typesafe_keyreply"
         try:
             base.mkdir(parents=True, exist_ok=True)
         except Exception as e:
@@ -821,9 +821,9 @@ class TypeSafeAutoReplyPlugin(Star):
         """注册配置中心所需的全部 Web API 路由。
 
         页面通过 window.AstrBotPluginPage.apiGet("config/get") 调用，
-        Dashboard 会转发到 /api/plug/astrbot_plugin_typesafe_autoreply/config/get。
+        Dashboard 会转发到 /api/plug/astrbot_plugin_typesafe_keyreply/config/get。
         """
-        plugin_name = "astrbot_plugin_typesafe_autoreply"  # 与 metadata.yaml 的 name 一致
+        plugin_name = "astrbot_plugin_typesafe_keyreply"  # 与 metadata.yaml 的 name 一致
         routes = (
             ("console/config", self._api_config_get, ["GET"], "读取插件配置（密钥已掩码）"),
             ("console/config/update", self._api_config_update, ["POST"], "更新插件配置并重载"),
@@ -851,7 +851,7 @@ class TypeSafeAutoReplyPlugin(Star):
             from astrbot.core.star.star import star_registry
 
             for plugin_md in star_registry:
-                if plugin_md.name == "astrbot_plugin_typesafe_autoreply":
+                if plugin_md.name == "astrbot_plugin_typesafe_keyreply":
                     if plugin_md.config:
                         return plugin_md.config
                     break
@@ -870,10 +870,10 @@ class TypeSafeAutoReplyPlugin(Star):
 
         try:
             if hasattr(self.context, "reload_plugin"):
-                await self.context.reload_plugin("astrbot_plugin_typesafe_autoreply")
+                await self.context.reload_plugin("astrbot_plugin_typesafe_keyreply")
                 return True
             if hasattr(self.context, "_star_manager"):
-                await self.context._star_manager.reload("astrbot_plugin_typesafe_autoreply")
+                await self.context._star_manager.reload("astrbot_plugin_typesafe_keyreply")
                 return True
         except Exception as e:
             logger.warning(f"[TypeSafe] 插件重载失败: {e}")

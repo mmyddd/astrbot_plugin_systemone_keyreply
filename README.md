@@ -104,19 +104,25 @@ TypeSafe 超时、限流（429）、鉴权失败或网络异常时按配置降�
 ## 安装说明
 
 ### 方式一：AstrBot WebUI 插件市场安装
-在 AstrBot 控制面板中的“插件市场”搜索 `astrbot_plugin_typesafe_autoreply` 并点击安装。
+在 AstrBot 控制面板中的“插件市场”搜索 `astrbot_plugin_typesafe_keyreply` 并点击安装。
 
 ### 方式二：手动安装
 进入 AstrBot 的 `data/plugins/` 目录，克隆或解压本项目：
 ```bash
 cd data/plugins/
-git clone https://github.com/mmyddd/astrbot_plugin_typesafe_autoreply.git
+git clone https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply.git
 ```
 在 AstrBot 对应 Python 环境中安装依赖：
 ```bash
-pip install -r astrbot_plugin_typesafe_autoreply/requirements.txt
+pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
 ```
 重启 AstrBot 即可。本插件仅依赖 `typesafe-sdk`。
+
+> [!IMPORTANT]
+> 插件标识为 `astrbot_plugin_typesafe_keyreply`（以 `metadata.yaml` 的 `name` 为准）。
+> 从旧版 `astrbot_plugin_typesafe_autoreply` 升级时，**插件目录名会随之改变**，
+> 请同时把问答表数据从 `data/plugin_data/astrbot_plugin_typesafe_autoreply/`
+> 移动到 `data/plugin_data/astrbot_plugin_typesafe_keyreply/`，否则页面会显示空问答表。
 
 ---
 
@@ -190,10 +196,18 @@ pip install -r astrbot_plugin_typesafe_autoreply/requirements.txt
 
 | 内容 | 位置 |
 |---|---|
-| 问答表 | `data/plugin_data/astrbot_plugin_typesafe_autoreply/qa_tables.json` |
+| 问答表 | `data/plugin_data/astrbot_plugin_typesafe_keyreply/qa_tables.json` |
 | KeyReply 来源文件（只读探测） | `data/plugins/keyword_reply/triggers.yml` |
 
 问答表使用 JSON 存储，支持全局默认表、按群独立表与按私聊独立表三级作用域。旧版本的单 `scope_id` 数据可被直接读取，无需迁移。
+
+> [!NOTE]
+> 数据目录以插件标识命名。从旧版 `astrbot_plugin_typesafe_autoreply` 升级时目录名会变化，
+> 直接移动整个目录即可完成数据迁移：
+> ```bash
+> mv data/plugin_data/astrbot_plugin_typesafe_autoreply \
+>    data/plugin_data/astrbot_plugin_typesafe_keyreply
+> ```
 
 ---
 
