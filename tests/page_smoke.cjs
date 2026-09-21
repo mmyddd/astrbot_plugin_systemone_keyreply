@@ -8,6 +8,7 @@
 /* 页面冒烟测试 v2：更忠实的 DOM 桩（支持子树查询与 window.setTimeout）。 */
 const vm = require('vm');
 const fs = require('fs');
+const path = require('path');
 const REPO = require('path').resolve(__dirname, '..');
 const DIR = require('path').join(REPO, 'pages', 'typesafe-console', 'js') + require('path').sep;
 const SCHEMA = require('path').join(REPO, '_conf_schema.json');
@@ -16,6 +17,15 @@ function matchSel(n, sel) {
   sel = String(sel).trim();
   if (sel.includes(',')) return sel.split(',').some(s => matchSel(n, s));
   if (sel.startsWith('#')) return n.id === sel.slice(1);
+  // 类选择器：支持 .a 与 tag.a 两种写法
+  if (sel.startsWith('.') || /^[a-z]+\./.test(sel)) {
+    const m = sel.match(/^([a-z]*)\.([\w-]+)$/i);
+    if (m) {
+      const tagOk = !m[1] || n.tagName === m[1].toUpperCase();
+      const cls = String(n.className || '').split(/\s+/);
+      return tagOk && cls.indexOf(m[2]) >= 0;
+    }
+  }
   const attr = sel.match(/^\[([\w-]+)(?:=["']?([^"'\]]*)["']?)?\]$/);
   if (attr) {
     const key = attr[1].replace(/^data-/, '');
@@ -76,10 +86,36 @@ function makeEl(tag) {
     removeAttribute(k) { delete this.attrs[k]; }, getAttribute(k) { return this.attrs[k]; },
     addEventListener(ev, fn) { (this._ev = this._ev || {})[ev] = fn; },
     removeEventListener() {},
-    querySelector(sel) { return descendants(this).find(n => matchSel(n, sel)) || null; },
-    querySelectorAll(sel) { return descendants(this).filter(n => matchSel(n, sel)); }
+    querySelector(sel) {
+      const direct = descendants(this).find(n => matchSel(n, sel));
+      if (direct) return direct;
+      return this._queryDescendant ? this._queryDescendant(sel) : null;
+    },
+    querySelectorAll(sel) {
+      const direct = descendants(this).filter(n => matchSel(n, sel));
+      if (direct.length) return direct;
+      const d = this._queryDescendant ? this._queryDescendant(sel) : null;
+      return d ? [d] : [];
+    }
   };
   function descendants(n) { const out = []; const walk = x => { for (const c of x.children) { out.push(c); walk(c); } }; walk(n); return out; }
+  // 极简后代选择器支持（形如 ".a b" / "#id h2"），仅用于测试中的少量查询
+  node._queryDescendant = function (sel) {
+    const parts = String(sel).trim().split(/\s+/);
+    if (parts.length < 2) return null;
+    const last = parts[parts.length - 1];
+    const ancestors = parts.slice(0, -1);
+    return descendants(node).find(cand => {
+      if (!matchSel(cand, last)) return false;
+      let p = cand.parentNode;
+      let need = ancestors.length - 1;
+      while (p && need >= 0) {
+        if (matchSel(p, ancestors[need])) need--;
+        p = p.parentNode;
+      }
+      return need < 0;
+    }) || null;
+  };
   node.classList._owner = node;
   return node;
 }
@@ -131,7 +167,19 @@ const cfg = {}; for (const [k, v] of Object.entries(schema)) cfg[k] = v.default;
 TS.state.config = cfg;
 
 const checks = [];
-const t = (n, fn) => { try { fn(); checks.push([n, true, '']); } catch (e) { checks.push([n, false, e.message]); } };
+const pending = [];
+const t = (n, fn) => {
+  try {
+    const r = fn();
+    // 支持异步断言：收集起来在最后统一结算
+    if (r && typeof r.then === 'function') {
+      pending.push(r.then(() => checks.push([n, true, '']))
+        .catch(e => checks.push([n, false, e.message])));
+      return;
+    }
+    checks.push([n, true, '']);
+  } catch (e) { checks.push([n, false, e.message]); }
+};
 
 t('渲染全部 schema 字段控件', () => {
   TS.config.render();
@@ -320,6 +368,67 @@ t('qa 无图答案不渲染缩略图', () => {
   TS.qa.loadDraft();
 });
 
+/* ── 确认对话框（sandbox 下 window.confirm 失效）── */
+t('confirmDialog 存在且返回 Promise', () => {
+  if (typeof TS.confirmDialog !== 'function') throw new Error('缺少 TS.confirmDialog');
+  const p = TS.confirmDialog('测试确认');
+  if (!p || typeof p.then !== 'function') throw new Error('confirmDialog 未返回 Promise');
+  // 清理：按取消，避免 Promise 悬空
+  const modal = document.querySelector('#app-confirm');
+  if (!modal) throw new Error('未创建确认对话框');
+  const cancel = modal.querySelector('#app-confirm-cancel');
+  if (!cancel) throw new Error('缺少取消按钮');
+  cancel._ev.click();
+});
+
+t('confirmDialog 取消返回 false', async () => {
+  const p = TS.confirmDialog('取消测试');
+  const modal = document.querySelector('#app-confirm');
+  modal.querySelector('#app-confirm-cancel')._ev.click();
+  const r = await p;
+  if (r !== false) throw new Error('取消应返回 false，实际 ' + r);
+});
+
+t('confirmDialog 确定返回 true', async () => {
+  const p = TS.confirmDialog('确定测试');
+  const modal = document.querySelector('#app-confirm');
+  modal.querySelector('#app-confirm-ok')._ev.click();
+  const r = await p;
+  if (r !== true) throw new Error('确定应返回 true，实际 ' + r);
+});
+
+t('confirmDialog 显示传入的文案', async () => {
+  const p = TS.confirmDialog('这段文案应当出现', { title: '自定义标题' });
+  const modal = document.querySelector('#app-confirm');
+  const msg = modal.querySelector('#app-confirm-message');
+  if (String(msg.textContent).indexOf('这段文案应当出现') < 0) {
+    throw new Error('未显示确认文案：' + msg.textContent);
+  }
+  // 用标题元素自身的文本校验（桩不支持后代选择器语法）
+  const nodes = [];
+  const walk = n => { for (const c of n.children) { nodes.push(c); walk(c); } };
+  walk(modal);
+  const h = nodes.filter(n => n.tagName === 'H2')[0];
+  if (!h) throw new Error('对话框缺少标题元素');
+  if (String(h.textContent) !== '自定义标题') throw new Error('标题未生效：' + h.textContent);
+  modal.querySelector('#app-confirm-cancel')._ev.click();
+  await p;
+});
+
+t('产品代码不再直接调用被沙箱屏蔽的 window.confirm', () => {
+  const files = ['qa.js', 'config.js', 'app.js'];
+  const bad = [];
+  for (const f of files) {
+    const src = fs.readFileSync(path.join(DIR, f), 'utf8');
+    src.split('\n').forEach((line, i) => {
+      if (/window\.confirm\s*\(/.test(line) && line.trim().indexOf('//') !== 0) {
+        bad.push(f + ':' + (i + 1));
+      }
+    });
+  }
+  if (bad.length) throw new Error('仍在使用 window.confirm：' + bad.join(', '));
+});
+
 t('qa 表格子不是 label（否则点任意位置会触发 ⋯ 按钮）', () => {
   const chips = [];
   const walk = n => { for (const c of n.children) { if (String(c.className || '').indexOf('qa-scope-chip') >= 0) chips.push(c); walk(c); } };
@@ -387,9 +496,11 @@ t('qa 空表渲染占位', () => {
 });
 
 console.log('脚本加载错误: ' + (errors.length ? errors.join(' | ') : '(无)'));
-console.log('');
-for (const [n, ok, msg] of checks) console.log((ok ? 'PASS  ' : 'FAIL  ') + n + (msg ? '  -> ' + msg : ''));
-const failed = checks.filter(c => !c[1]).length + errors.length;
-console.log('');
-console.log(failed === 0 ? 'SMOKE TEST OK (' + checks.length + ' 项)' : 'SMOKE TEST FAILED (' + failed + ')');
-process.exit(failed === 0 ? 0 : 1);
+Promise.all(pending).then(() => {
+  console.log('');
+  for (const [n, ok, msg] of checks) console.log((ok ? 'PASS  ' : 'FAIL  ') + n + (msg ? '  -> ' + msg : ''));
+  const failed = checks.filter(c => !c[1]).length + errors.length;
+  console.log('');
+  console.log(failed === 0 ? 'SMOKE TEST OK (' + checks.length + ' 项)' : 'SMOKE TEST FAILED (' + failed + ')');
+  process.exit(failed === 0 ? 0 : 1);
+});

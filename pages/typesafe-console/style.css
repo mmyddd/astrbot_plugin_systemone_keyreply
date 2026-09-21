@@ -336,6 +336,9 @@ svg { display: block; width: 100%; height: 100%; }
 .btn-ghost { border-color: var(--line-strong); background: var(--card); color: var(--text-2); }
 .btn-ghost:hover:not(:disabled) { background: var(--card-sunken); color: var(--text); }
 .btn-danger { border-color: var(--danger); background: var(--card); color: var(--danger); }
+.btn-danger-solid { background: var(--danger); color: #fff; box-shadow: var(--shadow-1); }
+.btn-danger-solid:hover:not(:disabled) { background: #b91c1c; }
+html[data-theme="dark"] .btn-danger-solid:hover:not(:disabled) { background: #e11d48; }
 .btn-danger:hover:not(:disabled) { background: var(--danger-soft); }
 .btn-sm { padding: 6px 12px; font-size: 12.5px; }
 .btn.is-busy { position: relative; color: transparent !important; }
@@ -621,6 +624,7 @@ svg { display: block; width: 100%; height: 100%; }
 .modal-head p { color: var(--text-3); font-size: 12.5px; margin-top: 2px; }
 .modal-head .icon-btn { margin-left: auto; flex: none; }
 .modal-body { padding: 18px 20px; overflow-y: auto; }
+.confirm-message { font-size: 13.5px; line-height: 1.7; color: var(--text-2); }
 .modal-foot {
   display: flex; align-items: center; gap: 10px;
   padding: 14px 20px;

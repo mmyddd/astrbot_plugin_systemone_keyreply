@@ -137,8 +137,14 @@
       chip.appendChild(el('span', 'qa-scope-kind', tableIcon(t)));
       chip.appendChild(el('span', 'qa-scope-name', tableTitle(t)));
       chip.appendChild(el('span', 'qa-scope-count', t.entries.length + ' 条'));
-      const selectThis = () => {
-        if (state.qaDirty && !window.confirm('当前改动尚未保存，切换问答表将丢弃这些改动。继续？')) return;
+      const selectThis = async () => {
+        if (state.qaDirty) {
+          const go = await TS.confirmDialog(
+            '当前改动尚未保存，切换问答表将丢弃这些改动。',
+            { title: '放弃未保存的改动', okLabel: '继续切换', danger: true }
+          );
+          if (!go) return;
+        }
         state.qaTableKey = t.key;
         loadDraft();
       };
@@ -451,7 +457,11 @@
 
   async function deleteTable() {
     if (!editingKey) return;
-    if (!window.confirm('删除这张问答表？其中的问答对将一并移除。')) return;
+    const okDelete = await TS.confirmDialog(
+      '删除这张问答表？其中的问答对将一并移除，且无法撤销。',
+      { title: '删除问答表', okLabel: '删除', danger: true }
+    );
+    if (!okDelete) return;
     try {
       await TS.api.qaDelete({ key: editingKey });
       state.qaTableKey = 'global';
@@ -545,8 +555,12 @@
     const path = pathInput ? pathInput.value.trim() : '';
     const replace = Boolean(replaceBox && replaceBox.checked);
 
-    if (replace && !window.confirm('覆盖模式会用 KeyReply 的问答表整体替换当前作用域的内容，确定继续？')) {
-      return;
+    if (replace) {
+      const go = await TS.confirmDialog(
+        '覆盖模式会用 KeyReply 的问答表整体替换当前作用域的内容，原有问答对将被移除。',
+        { title: '覆盖导入', okLabel: '覆盖', danger: true }
+      );
+      if (!go) return;
     }
 
     const btn = $('#qa-import-btn');

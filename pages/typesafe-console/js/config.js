@@ -483,7 +483,11 @@
   }
 
   async function resetGroup(group) {
-    if (!window.confirm('将「' + group.title + '」中的配置恢复为默认值？')) return;
+    const go = await TS.confirmDialog(
+      '将「' + group.title + '」中的配置恢复为默认值？',
+      { title: '恢复默认值', okLabel: '恢复', danger: true }
+    );
+    if (!go) return;
     try {
       const result = await TS.api.configReset(group.fields.map(field => field.key));
       TS.toast('已恢复 ' + ((result && result.updated) || []).length + ' 项默认值', 'ok');

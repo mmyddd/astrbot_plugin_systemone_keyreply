@@ -147,6 +147,102 @@
     lastSyncAt: null
   };
 
+  /* ── 确认对话框 ─────────────────────────────────────────
+     插件页运行在 sandbox iframe 中且未开启 allow-modals，
+     window.confirm() 会被浏览器忽略并返回 false，
+     因此所有二次确认必须走页面内的自定义对话框。
+     ─────────────────────────────────────────────────────── */
+  let confirmResolve = null;
+
+  function ensureConfirmModal() {
+    let modal = $('#app-confirm');
+    if (modal) return modal;
+
+    modal = el('div', 'modal');
+    modal.id = 'app-confirm';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('hidden', '');
+
+    const card = el('div', 'modal-card modal-card-sm');
+
+    const head = el('header', 'modal-head');
+    const titles = el('div');
+    titles.appendChild(el('h2', null, '确认操作'));
+    titles.appendChild(el('p', null, ''));
+    head.appendChild(titles);
+    card.appendChild(head);
+
+    const body = el('div', 'modal-body');
+    const msg = el('p', 'confirm-message');
+    msg.id = 'app-confirm-message';
+    body.appendChild(msg);
+    card.appendChild(body);
+
+    const foot = el('footer', 'modal-foot');
+    const right = el('div', 'modal-foot-right');
+    const cancel = el('button', 'btn btn-ghost', '取消');
+    cancel.type = 'button';
+    cancel.id = 'app-confirm-cancel';
+    const ok = el('button', 'btn btn-primary', '确定');
+    ok.type = 'button';
+    ok.id = 'app-confirm-ok';
+    right.appendChild(cancel);
+    right.appendChild(ok);
+    foot.appendChild(right);
+    card.appendChild(foot);
+
+    modal.appendChild(card);
+    (document.body || document.documentElement).appendChild(modal);
+
+    const finish = (value) => {
+      modal.setAttribute('hidden', '');
+      document.body.style.overflow = '';
+      const resolve = confirmResolve;
+      confirmResolve = null;
+      if (resolve) resolve(value);
+    };
+    cancel.addEventListener('click', () => finish(false));
+    ok.addEventListener('click', () => finish(true));
+    modal.addEventListener('click', (ev) => { if (ev.target === modal) finish(false); });
+    window.addEventListener('keydown', (ev) => {
+      if (modal.hasAttribute('hidden')) return;
+      if (ev.key === 'Escape') finish(false);
+      if (ev.key === 'Enter') finish(true);
+    });
+    return modal;
+  }
+
+  /**
+   * 页面内确认框（替代被 sandbox 屏蔽的 window.confirm）。
+   * 返回 Promise<boolean>。
+   */
+  function confirmDialog(message, options) {
+    const opts = options || {};
+    return new Promise((resolve) => {
+      const modal = ensureConfirmModal();
+      const title = modal.querySelector('.modal-head h2');
+      const msg = modal.querySelector('#app-confirm-message');
+      const ok = modal.querySelector('#app-confirm-ok');
+      if (title) title.textContent = opts.title || '确认操作';
+      if (msg) msg.textContent = message;
+      if (ok) {
+        ok.textContent = opts.okLabel || '确定';
+        ok.className = 'btn ' + (opts.danger ? 'btn-danger-solid' : 'btn-primary');
+      }
+      // 若已有未决确认，先按取消处理，避免 Promise 永久挂起
+      if (confirmResolve) {
+        const prev = confirmResolve;
+        confirmResolve = null;
+        prev(false);
+      }
+      confirmResolve = resolve;
+      modal.removeAttribute('hidden');
+      document.body.style.overflow = 'hidden';
+      if (ok && typeof ok.focus === 'function') ok.focus();
+    });
+  }
+
   /* ── 轻提示 ───────────────────────────────────────────── */
   function toast(message, kind) {
     const stack = $('#toast-stack');
@@ -162,6 +258,7 @@
 
   Object.assign(TS, {
     $: $, $$: $$, esc: esc, show: show, el: el,
-    format: format, bridge: bridge, api: api, state: state, toast: toast
+    format: format, bridge: bridge, api: api, state: state, toast: toast,
+    confirmDialog: confirmDialog
   });
 })();

@@ -107,10 +107,12 @@
       applyTheme(document.documentElement.dataset.theme !== 'dark');
     });
     $('#save-btn')?.addEventListener('click', () => TS.config.save());
-    $('#reload-defaults')?.addEventListener('click', () => {
-      if (window.confirm('把所有配置项填入内置默认值？确认后仍需点击保存才会写入。')) {
-        TS.config.fillDefaults();
-      }
+    $('#reload-defaults')?.addEventListener('click', async () => {
+      const go = await TS.confirmDialog(
+        '把所有配置项填入内置默认值？确认后仍需点击保存才会写入。',
+        { title: '填入默认值', okLabel: '填入' }
+      );
+      if (go) TS.config.fillDefaults();
     });
     $('#probe-btn')?.addEventListener('click', () => TS.views.probe());
     $('#try-btn')?.addEventListener('click', () => TS.views.runTry());
