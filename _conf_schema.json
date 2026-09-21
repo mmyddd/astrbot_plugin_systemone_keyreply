@@ -33,7 +33,11 @@
     "description": "TypeSafe 判定模型",
     "type": "string",
     "hint": "TypeSafe 语义决策使用的模型。jev-latest 为官方推荐最新旗舰决策模型，速度快且判断精准",
-    "options": ["jev-latest (推荐最新旗舰)", "jev", "自定义模型"],
+    "options": [
+      "jev-latest (推荐最新旗舰)",
+      "jev",
+      "自定义模型"
+    ],
     "default": "jev-latest (推荐最新旗舰)"
   },
   "typesafe_custom_model": {
@@ -46,14 +50,22 @@
     "description": "TypeSafe 失败处理策略",
     "type": "string",
     "hint": "当 TypeSafe API 超时或出错时的处理方式",
-    "options": ["静默，不回复", "基础规则判断 (问号回复)", "直通 AstrBot"],
+    "options": [
+      "静默，不回复",
+      "基础规则判断 (问号回复)",
+      "直通 AstrBot"
+    ],
     "default": "静默，不回复"
   },
   "min_confidence": {
     "description": "最低判断置信度",
     "type": "string",
     "hint": "TypeSafe 判定需要回复时的最低置信度阈值要求",
-    "options": ["高", "中", "低"],
+    "options": [
+      "高",
+      "中",
+      "低"
+    ],
     "default": "中"
   },
   "allowed_reply_types": {
@@ -89,8 +101,50 @@
     "description": "回复模型选择模式",
     "type": "string",
     "hint": "跟随当前会话模型或指定已配置的 AstrBot Provider",
-    "options": ["跟随当前会话模型", "指定已配置 Provider"],
+    "options": [
+      "跟随当前会话模型",
+      "指定已配置 Provider"
+    ],
     "default": "跟随当前会话模型"
+  },
+  "reply_source": {
+    "description": "回复来源",
+    "type": "string",
+    "hint": "固定问答表 = 回复只来自 QA 表；大模型 = 维持原有 LLM 自由生成",
+    "options": [
+      "固定问答表 (KeyReply)",
+      "大模型自由回复"
+    ],
+    "default": "大模型自由回复"
+  },
+  "enable_jev_topic": {
+    "description": "启用 Jev 话题判断",
+    "type": "bool",
+    "default": true,
+    "hint": "开启 = 把 QA 表的问题作为「话题判断关键词」交给 Jev 做语义路由，命中后由 LLM 围绕该条答案生成；关闭 = 回退到 KeyReply 原本的正则匹配并直接发送固定答案"
+  },
+  "qa_min_confidence": {
+    "description": "话题命中最低置信度",
+    "type": "string",
+    "hint": "Jev 判定话题的置信度低于该等级时视为未命中，保持静默",
+    "options": [
+      "高",
+      "中",
+      "低"
+    ],
+    "default": "中"
+  },
+  "qa_fallback_to_llm": {
+    "description": "QA 未命中时回退大模型",
+    "type": "bool",
+    "default": false,
+    "hint": "关闭（推荐，等同 KeyReply 行为）= 未命中 QA 就保持静默；开启 = 未命中时改用 LLM 自由回复"
+  },
+  "qa_import_path": {
+    "description": "KeyReply 数据文件路径",
+    "type": "string",
+    "default": "",
+    "hint": "留空则自动探测 data/plugins/keyword_reply/triggers.yml；可在配置中心一键导入"
   },
   "custom_provider_id": {
     "description": "指定 AstrBot Provider ID",
@@ -102,7 +156,13 @@
     "description": "回复长度模式",
     "type": "string",
     "hint": "控制生成的回答篇幅",
-    "options": ["极短 (20~50字)", "简短 (50~100字)", "正常 (100~250字)", "详细 (250~500字)", "自然/精炼"],
+    "options": [
+      "极短 (20~50字)",
+      "简短 (50~100字)",
+      "正常 (100~250字)",
+      "详细 (250~500字)",
+      "自然/精炼"
+    ],
     "default": "简短 (50~100字)"
   },
   "max_chars": {
@@ -115,7 +175,17 @@
     "description": "回复风格",
     "type": "string",
     "hint": "机器人的语言语气与表达风格",
-    "options": ["自然", "简洁", "专业", "友好", "幽默", "活泼", "严谨", "群友", "自定义"],
+    "options": [
+      "自然",
+      "简洁",
+      "专业",
+      "友好",
+      "幽默",
+      "活泼",
+      "严谨",
+      "群友",
+      "自定义"
+    ],
     "default": "自然"
   },
   "custom_prompt": {
@@ -134,7 +204,10 @@
     "description": "回复延时模式",
     "type": "string",
     "hint": "选择在设定区间内随机延时，或每次等待固定秒数",
-    "options": ["随机延时 (推荐)", "固定延时"],
+    "options": [
+      "随机延时 (推荐)",
+      "固定延时"
+    ],
     "default": "随机延时 (推荐)"
   },
   "reply_delay_min": {
@@ -159,36 +232,18 @@
     "description": "TypeSafe 上下文消息数量",
     "type": "int",
     "hint": "作为判断依据的最近聊天消息条数 (0, 3, 5, 10)",
-    "options": [0, 3, 5, 10],
-    "default": 3
-  },
-  "at_bot_mode": {
-    "description": "被 @ 机器人时处理策略",
-    "type": "string",
-    "hint": "在群聊中被 @ 机器人时，选择是否忽略 TypeSafe AI 直接调用 LLM 回复、经由 TypeSafe AI 判定、或交由 AstrBot 原生处理",
     "options": [
-      "忽略 TypeSafe AI (直接调用 LLM 回复)",
-      "使用 TypeSafe AI 判定",
-      "不处理，交由 AstrBot 原生处理"
+      0,
+      3,
+      5,
+      10
     ],
-    "default": "忽略 TypeSafe AI (直接调用 LLM 回复)"
-  },
-  "detect_bot_name": {
-    "description": "启用机器人名称/别名检测",
-    "type": "bool",
-    "hint": "是否在消息文本中匹配机器人名字或别名",
-    "default": true
-  },
-  "bot_aliases": {
-    "description": "机器人别名列表",
-    "type": "list",
-    "hint": "用于检测提及机器人的别名列表（例如：小白、机器人、AI、助手）",
-    "default": ["小白", "机器人", "AI", "助手"]
+    "default": 3
   },
   "session_cooldown": {
     "description": "同一会话回复冷却 (秒)",
     "type": "int",
-    "hint": "机器人主动回复后，同会话普通消息在此时间内不再主动触发（@机器人可绕过）",
+    "hint": "机器人主动回复后，同会话普通消息在此时间内不再主动触发",
     "default": 30
   },
   "user_cooldown": {
@@ -213,7 +268,12 @@
     "description": "黑白名单模式",
     "type": "string",
     "hint": "选择黑白名单生效模式",
-    "options": ["全部允许 (仅黑名单拦截)", "仅白名单", "仅黑名单", "黑名单与白名单并用"],
+    "options": [
+      "全部允许 (仅黑名单拦截)",
+      "仅白名单",
+      "仅黑名单",
+      "黑名单与白名单并用"
+    ],
     "default": "仅黑名单"
   },
   "session_whitelist": {
@@ -274,20 +334,32 @@
     "description": "强制触发关键词",
     "type": "list",
     "hint": "包含这些关键词的消息强制进入判断或回复",
-    "default": ["有人知道", "怎么解决", "求助", "请问", "怎么办"]
+    "default": [
+      "有人知道",
+      "怎么解决",
+      "求助",
+      "请问",
+      "怎么办"
+    ]
   },
   "force_reply_mode": {
     "description": "强制关键词触发模式",
     "type": "string",
     "hint": "进入 TypeSafe 判断还是直接回复",
-    "options": ["进入 TypeSafe 判断", "直接回复"],
+    "options": [
+      "进入 TypeSafe 判断",
+      "直接回复"
+    ],
     "default": "进入 TypeSafe 判断"
   },
   "ignore_keywords": {
     "description": "忽略关键词",
     "type": "list",
     "hint": "包含这些关键词的消息直接跳过",
-    "default": ["机器人别说话", "不用机器人回答"]
+    "default": [
+      "机器人别说话",
+      "不用机器人回答"
+    ]
   },
   "force_trigger_regex": {
     "description": "强制触发正则",

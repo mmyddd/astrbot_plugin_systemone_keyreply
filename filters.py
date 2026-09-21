@@ -126,17 +126,6 @@ class MessageFilter:
         return any(stripped.startswith(p) for p in cls.COMMAND_PREFIXES)
 
     @staticmethod
-    def is_bot_name_mentioned(text: str, aliases: List[str]) -> bool:
-        """检测消息文本中是否明确提到了机器人名称或别名"""
-        if not aliases or not text:
-            return False
-        lowered = text.lower()
-        for alias in aliases:
-            if alias and alias.lower() in lowered:
-                return True
-        return False
-
-    @staticmethod
     def matches_keywords(text: str, keywords: List[str]) -> bool:
         """检查文本是否包含关键词列表中的任一词"""
         if not text or not keywords:
@@ -160,49 +149,5 @@ class MessageFilter:
             return bool(re.search(p_str, text, re.IGNORECASE))
         except re.error:
             return False
-
-    @staticmethod
-    def is_explicitly_at_bot(event, bot_aliases: Optional[List[str]] = None) -> bool:
-        """
-        精确判断消息是否真实显式 @了机器人 或 回复了机器人的消息。
-        注意：
-        1. 不能直接使用 event.is_wake_up()，因为在 AstrBot 中只要注册了监听器，所有进入插件的事件其 event.is_wake 都会被框架置为 True。
-        2. @全体成员 (AtAll) 是针对群成员的通告，不应视为指名道姓 @机器人。
-        """
-        self_id = str(event.get_self_id() or "").strip()
-
-        # 1. 遍历消息链组件检测 At 和 Reply
-        try:
-            messages = event.get_messages() or []
-            for comp in messages:
-                # 显式 @了机器人（比对 QQ/账号 ID 或别名）
-                if hasattr(comp, "qq"):
-                    qq_str = str(getattr(comp, "qq", "")).strip()
-                    if self_id and qq_str == self_id:
-                        return True
-                if hasattr(comp, "name") and bot_aliases:
-                    name_str = str(getattr(comp, "name", "")).strip()
-                    if name_str and name_str in bot_aliases:
-                        return True
-
-                # 回复了机器人发出的上一条消息
-                if hasattr(comp, "sender_id"):
-                    sender_id_str = str(getattr(comp, "sender_id", "")).strip()
-                    if self_id and sender_id_str == self_id:
-                        return True
-        except Exception:
-            pass
-
-        # 2. 文本中包含 @机器人ID 或 @机器人别名
-        raw_text = event.get_message_str() or ""
-        if self_id and f"@{self_id}" in raw_text:
-            return True
-
-        if bot_aliases:
-            for alias in bot_aliases:
-                if alias and f"@{alias}" in raw_text:
-                    return True
-
-        return False
 
 

@@ -13,8 +13,22 @@ if plugin_dir not in sys.path:
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import AstrBotConfig
+from astrbot.api.message_components import Plain, Image
 
 try:
+    from .qa_store import QAStore, SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE
+    from .qa_engine import (
+        MODE_CLASSIC,
+        MODE_JEV,
+        MODE_LABELS,
+        resolve_mode,
+        answer_text_of,
+        answer_images_of,
+        resolved_text,
+        resolved_images,
+        question_of,
+        describe_match,
+    )
     from .typesafe_client import TypeSafeClientWrapper
     from .classifier import MessageClassifier, REPLY_TYPE_NAMES
     from .reply_engine import ReplyEngine
@@ -32,9 +46,21 @@ try:
         normalize_filter_mode,
         normalize_force_reply_mode,
         normalize_typesafe_model,
-        normalize_at_bot_mode,
     )
 except (ImportError, ValueError):
+    from qa_store import QAStore, SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE
+    from qa_engine import (
+        MODE_CLASSIC,
+        MODE_JEV,
+        MODE_LABELS,
+        resolve_mode,
+        answer_text_of,
+        answer_images_of,
+        resolved_text,
+        resolved_images,
+        question_of,
+        describe_match,
+    )
     from typesafe_client import TypeSafeClientWrapper
     from classifier import MessageClassifier, REPLY_TYPE_NAMES
     from reply_engine import ReplyEngine
@@ -52,7 +78,6 @@ except (ImportError, ValueError):
         normalize_filter_mode,
         normalize_force_reply_mode,
         normalize_typesafe_model,
-        normalize_at_bot_mode,
     )
 
 logger = logging.getLogger("astrbot")
@@ -71,7 +96,6 @@ SECRET_FIELDS = ("typesafe_api_key",)
 
 _EDITABLE_LIST_FIELDS = (
     "allowed_reply_types",
-    "bot_aliases",
     "session_whitelist",
     "session_blacklist",
     "user_whitelist",
@@ -81,6 +105,9 @@ _EDITABLE_LIST_FIELDS = (
 )
 
 _EDITABLE_TEXT_FIELDS = (
+    "reply_source",
+    "qa_min_confidence",
+    "qa_import_path",
     "typesafe_api_key",
     "typesafe_model",
     "typesafe_custom_model",
@@ -92,7 +119,6 @@ _EDITABLE_TEXT_FIELDS = (
     "reply_style",
     "custom_prompt",
     "reply_delay_mode",
-    "at_bot_mode",
     "filter_mode",
     "force_reply_mode",
     "force_trigger_regex",
@@ -100,11 +126,12 @@ _EDITABLE_TEXT_FIELDS = (
 )
 
 _EDITABLE_BOOL_FIELDS = (
+    "enable_jev_topic",
+    "qa_fallback_to_llm",
     "enable_plugin",
     "enable_group",
     "enable_private",
     "enable_reply_delay",
-    "detect_bot_name",
     "ignore_commands",
     "ignore_bots",
     "ignore_pure_media",
@@ -292,18 +319,6 @@ class TypeSafeAutoReplyPlugin(Star):
 
         # 5. 智能判断与上下文
         self.context_message_count = self.config.get("context_message_count", 3)
-        self.at_bot_mode_raw = self.config.get("at_bot_mode")
-        if self.at_bot_mode_raw is not None:
-            self.at_bot_mode = normalize_at_bot_mode(self.at_bot_mode_raw)
-        else:
-            old_bypass = self.config.get("bypass_on_at", True)
-            self.at_bot_mode = "bypass_typesafe" if old_bypass else "use_typesafe"
-        self.bypass_on_at = self.at_bot_mode == "bypass_typesafe"
-
-        self.detect_bot_name = self.config.get("detect_bot_name", True)
-        self.bot_aliases = self.config.get(
-            "bot_aliases", ["小白", "机器人", "AI", "助手"]
-        )
 
         # 6. 防刷屏与频控
         self.session_cooldown = self.config.get("session_cooldown", 30)
@@ -389,7 +404,19 @@ class TypeSafeAutoReplyPlugin(Star):
         self.cooldown_tracker = CooldownTracker()
         self.filter = MessageFilter()
 
-        # 10. WebUI 配置中心（Dashboard 插件页）后端路由
+        # 10. 固定问答表（KeyReply 兼容）
+        self.reply_source = str(self.config.get("reply_source", "大模型自由回复"))
+        self.use_qa_table = "固定问答表" in self.reply_source or "keyreply" in self.reply_source.lower()
+        self.enable_jev_topic = bool(self.config.get("enable_jev_topic", True))
+        self.qa_min_confidence = normalize_confidence_level(
+            self.config.get("qa_min_confidence", "中")
+        )
+        self.qa_fallback_to_llm = bool(self.config.get("qa_fallback_to_llm", False))
+        self.qa_import_path = str(self.config.get("qa_import_path", "") or "")
+        self.qa_mode = resolve_mode(self.enable_jev_topic)
+        self.qa_store = QAStore(self._plugin_data_dir())
+
+        # 11. WebUI 配置中心（Dashboard 插件页）后端路由
         self._register_web_apis()
 
         logger.info(
@@ -484,6 +511,7 @@ class TypeSafeAutoReplyPlugin(Star):
             text = "[图片]"
 
         sender_name = event.get_sender_name() or "群友"
+        is_group = not is_private
         group_id = str(event.get_group_id() or "")
         session_id = str(event.get_session_id() or group_id or "")
         umo = str(getattr(event, "unified_msg_origin", "") or "")
@@ -571,69 +599,13 @@ class TypeSafeAutoReplyPlugin(Star):
             logger.info("[TypeSafe] [规则过滤] 命中忽略正则表达式，保持静默")
             return
 
-        # 9. 是否显式 @机器人 或 回复机器人？（注意：严禁使用恒为True的 event.is_wake_up()）
-        is_at_bot = self.filter.is_explicitly_at_bot(event, self.bot_aliases)
-        if is_at_bot:
-            if self.at_bot_mode == "pass_to_astrbot":
-                logger.info(
-                    "[TypeSafe] [原生接管] 检测到显式 @机器人/回复机器人消息，按配置交由 AstrBot 原生逻辑处理 (本插件不拦截)"
-                )
-                return
-            elif self.at_bot_mode == "bypass_typesafe":
-                logger.info(
-                    "[TypeSafe] [特权穿透] 检测到显式 @机器人/回复机器人消息，按配置忽略 TypeSafe AI 直接生成回复"
-                )
-                self.cooldown_tracker.reset_continuous(session_id)
-
-                recent_msgs = self.context_manager.get_recent_messages(
-                    session_id,
-                    count=self.context_message_count,
-                    ignore_bots=self.ignore_bots,
-                    ignore_commands=self.ignore_commands,
-                )
-                chat_context = self.context_manager.format_context_string(recent_msgs)
-
-                reply_text = await self.reply_engine.generate_reply(
-                    event=event,
-                    current_message=text,
-                    chat_context=chat_context,
-                    model_mode=self.model_mode,
-                    custom_provider_id=self.custom_provider_id,
-                    reply_style=self.reply_style,
-                    reply_length_mode=self.reply_length_mode,
-                    max_chars=self.max_chars,
-                    custom_prompt=self.custom_prompt,
-                    image_urls=image_urls if image_urls else None,
-                )
-                if reply_text:
-                    await self._apply_reply_delay()
-                    self.cooldown_tracker.record_reply_sent(session_id, sender_id)
-                    event.stop_event()
-                    yield event.plain_result(reply_text)
-                return
-            else:
-                # self.at_bot_mode == "use_typesafe"
-                logger.info(
-                    "[TypeSafe] [意图研判] 检测到显式 @机器人/回复机器人消息，按配置交由 TypeSafe AI 判定是否回复"
-                )
-
-        # 10. 是否命中机器人名称/别名检测
-        name_mentioned = False
-        if self.detect_bot_name and self.filter.is_bot_name_mentioned(
-            text, self.bot_aliases
-        ):
-            name_mentioned = True
-            logger.info(f"[TypeSafe] [别名触发] 消息中提及机器人别名: \"{display_msg}\"")
-
-        # 11. 冷却检查与连续回复限制
-        # 若提及了机器人别名，可特许绕过普通冷却
-        bypass_cooldown = is_at_bot or name_mentioned
+        # 9. 冷却检查与连续回复限制
         is_cooling, cd_reason = self.cooldown_tracker.is_cooling_down(
             session_id=session_id,
             user_id=sender_id,
             session_cooldown=self.session_cooldown,
             user_cooldown=self.user_cooldown,
-            bypass=bypass_cooldown,
+            bypass=False,
         )
         if is_cooling:
             logger.info(f"[TypeSafe] [频控拦截] 处于冷却中 ({cd_reason})")
@@ -642,7 +614,7 @@ class TypeSafeAutoReplyPlugin(Star):
         if self.cooldown_tracker.is_continuous_limit_reached(
             session_id=session_id,
             max_continuous=self.max_continuous_replies,
-            bypass=bypass_cooldown,
+            bypass=False,
         ):
             logger.info(
                 f"[TypeSafe] [频控拦截] 会话 {session_id} 达到连续回复上限 ({self.max_continuous_replies}轮)，暂停主动发言"
@@ -700,12 +672,7 @@ class TypeSafeAutoReplyPlugin(Star):
         )
 
         eval_text = text
-        if is_at_bot:
-            if has_image:
-                eval_text = f"[用户在群聊中显式@提及了机器人，并附带图片/截图]: {text or '[图片]'}"
-            else:
-                eval_text = f"[用户在群聊中显式@提及了机器人提问/互动]: {text}"
-        elif has_image:
+        if has_image:
             if not text or text == "[图片]":
                 eval_text = "[用户发送了一张图片/截图，询问或发起讨论]"
             else:
@@ -716,6 +683,24 @@ class TypeSafeAutoReplyPlugin(Star):
             current_message=eval_text,
             current_sender_name=sender_name,
         )
+
+        # 13.5 固定问答表模式：完全接管回复来源
+        # 开启后不再走 TypeSafe「是否需要回复」的两阶段流程，改为 QA 表命中驱动。
+        if self.use_qa_table:
+            logger.debug(
+                f"[TypeSafe][QA] 固定问答表模式 ({MODE_LABELS.get(self.qa_mode, self.qa_mode)}) "
+                f"| 会话: {session_id}"
+            )
+            async for _ in self._handle_qa_reply(
+                event=event,
+                text=text,
+                session_id=session_id,
+                is_group=is_group,
+                group_id=group_id,
+                image_urls=image_urls,
+            ):
+                yield _
+            return
 
         # 14. TypeSafe AI 结构化判断
         logger.info(
@@ -742,11 +727,10 @@ class TypeSafeAutoReplyPlugin(Star):
             return
 
         # 16. 类型是否在允许列表中？
-        # 若是显式 @机器人 且用户开启了使用 TypeSafe 研判，只要 TypeSafe 裁决 should_reply=True 则放行回复
         is_type_allowed = MessageClassifier.is_reply_type_allowed(
             decision.reply_type, self.allowed_reply_types
         )
-        if not is_at_bot and not is_type_allowed:
+        if not is_type_allowed:
             chinese_allowed = [
                 REPLY_TYPE_NAMES.get(t, t) for t in self.allowed_reply_types
             ]
@@ -803,6 +787,224 @@ class TypeSafeAutoReplyPlugin(Star):
         logger.info(f"[TypeSafe] 回复已成功发送至会话 ({session_id})")
         yield event.plain_result(reply_text)
 
+    # ═══════════════════════════════════════════════════════════
+    # 固定问答表（KeyReply）回复路径
+    # ═══════════════════════════════════════════════════════════
+
+    async def _handle_qa_reply(
+        self,
+        event: AstrMessageEvent,
+        text: str,
+        session_id: str,
+        is_group: bool,
+        group_id: str,
+        image_urls: list,
+    ):
+        """固定问答表的完整处理流程（返回 True 表示已处理并结束）。"""
+        scope, scope_id = ("group", group_id) if is_group else ("private", session_id)
+        if self.qa_mode == MODE_JEV:
+            async for _ in self._handle_qa_jev(event, text, session_id, scope, scope_id, image_urls):
+                yield _
+        else:
+            async for _ in self._handle_qa_classic(event, text, session_id, scope, scope_id):
+                yield _
+
+    async def _handle_qa_classic(self, event, text, session_id, scope, scope_id):
+        """经典模式：正则匹配 QA 表，命中即原样发送固定答案。"""
+        match = self.qa_store.find_reply(text, scope, scope_id)
+        if not match:
+            if self.debug_log:
+                logger.debug("[TypeSafe][QA] 经典模式未命中任何问答，保持静默")
+            return
+
+        entry = match.get("entry") or {}
+        logger.debug(f"[TypeSafe][QA] [经典模式] {describe_match(match)} | 会话: {session_id}")
+
+        reply_text = resolved_text(match)
+        images = resolved_images(match)
+        if not reply_text and not images:
+            logger.warning("[TypeSafe][QA] 命中的问答对内容为空，保持静默")
+            return
+
+        await self._apply_reply_delay()
+        self.cooldown_tracker.record_reply_sent(session_id, event.get_sender_id())
+        event.stop_event()
+
+        chain = []
+        if reply_text:
+            chain.append(Plain(text=reply_text))
+        for url in images:
+            try:
+                chain.append(Image.fromURL(url=url))
+            except Exception as e:
+                logger.warning(f"[TypeSafe][QA] 构造图片组件失败 {url}: {e}")
+        if chain:
+            yield event.chain_result(chain)
+
+    async def _handle_qa_jev(self, event, text, session_id, scope, scope_id, image_urls):
+        """Jev 话题模式（两阶段）：
+
+        阶段一（本地、零开销）：用 KeyReply 的 % 通配正则做**召回**。
+            没有命中任何 Q 就直接静默返回——不会调用 Jev，也不会走到任何后续检测。
+        阶段二（仅在召回非空时触发）：把**召回出来的这几条 Q** 作为候选交给 Jev，
+            由 Jev 确认/消歧到底属于哪一条，再做置信度等后续检测。
+        """
+        # ── 阶段一：正则召回（本地，不打任何 API）────────────────
+        hits = self.qa_store.find_all_replies(text, scope, scope_id)
+        if not hits:
+            # 每条未命中的消息都会走到这里，属于逐条噪声，只在 debug 层输出
+            logger.debug("[TypeSafe][QA] [召回] 未命中任何 Q，静默（未调用 Jev）")
+            return
+
+        recalled_questions = []
+        for h in hits:
+            q = question_of(h.get("entry"))
+            if q and q not in recalled_questions:
+                recalled_questions.append(q)
+
+        logger.debug(
+            f"[TypeSafe][QA] [召回] 命中 {len(hits)} 条 Q，触发 Jev 判定: "
+            f"{' | '.join(recalled_questions)}"
+        )
+
+        # ── 阶段二：Jev 确认/消歧（仅有召回时才发生）────────────
+        if not self.typesafe_client.is_configured():
+            logger.warning(
+                "[TypeSafe][QA] 已召回候选，但 TypeSafe API Key 未配置，无法进行 Jev 确认；"
+                "按当前配置保持静默"
+            )
+            return
+
+        # 命中即触发 Jev：即使只有一条候选也交给 Jev 确认，
+        # 这样置信度门槛等「后面的检测」对所有命中一视同仁。
+        recent_records = self.context_manager.get_recent_messages(
+            session_id=session_id,
+            count=self.context_message_count,
+            ignore_bots=self.ignore_bots,
+            ignore_commands=self.ignore_commands,
+        )
+        state = self.context_manager.build_typesafe_state(
+            records=recent_records,
+            current_message=text,
+            current_sender_name=event.get_sender_name() or "群友",
+        )
+
+        logger.debug(
+            f"[TypeSafe][QA] [Jev] 正在确认话题 (候选 {len(recalled_questions)} 条, "
+            f"模型: {self.typesafe_model})"
+        )
+        topic = await self.classifier.match_topic(
+            state=state,
+            questions=recalled_questions,
+            cache_key_text=text,
+        )
+
+        if not topic.matched:
+            logger.debug(f"[TypeSafe][QA] [Jev] 未确认任何候选: {topic.reason}")
+            if self.qa_fallback_to_llm:
+                async for _ in self._qa_fallback_llm(event, text, session_id, recent_records, image_urls):
+                    yield _
+            return
+
+        if not MessageClassifier.is_confidence_sufficient(
+            topic.confidence_level, self.qa_min_confidence
+        ):
+            logger.debug(
+                f"[TypeSafe][QA] [Jev] 确认「{topic.question}」但置信度 "
+                f"'{topic.confidence_level}' 未达到阈值 '{self.qa_min_confidence}'，保持静默"
+            )
+            return
+
+        logger.debug(
+            f"[TypeSafe][QA] [Jev] 确认话题「{topic.question}」"
+            f" (置信度 {topic.confidence_level} {topic.confidence_score:.2f})"
+        )
+
+        chosen = self.qa_store.find_reply_by_question(topic.question, scope, scope_id)
+        if not chosen:
+            logger.warning(f"[TypeSafe][QA] 确认了话题但未能取回答案: {topic.question}")
+            return
+
+        async for _ in self._qa_generate_from_hit(
+            event, text, session_id, scope, scope_id, chosen, image_urls
+        ):
+            yield _
+
+    async def _qa_generate_from_hit(
+        self, event, text, session_id, scope, scope_id, match, image_urls
+    ):
+        """已经确定使用哪条问答对：组装上下文，让 LLM 围绕答案 A 生成并发送。"""
+        entry = match.get("entry") or {}
+        grounded = resolved_text(match)
+        if not grounded.strip():
+            logger.warning("[TypeSafe][QA] 选中条目的答案为空，保持静默")
+            return
+
+        recent_records = self.context_manager.get_recent_messages(
+            session_id=session_id,
+            count=self.context_message_count,
+            ignore_bots=self.ignore_bots,
+            ignore_commands=self.ignore_commands,
+        )
+
+        chat_context = self.context_manager.format_context_string(recent_records)
+        reply_text = await self.reply_engine.generate_grounded_reply(
+            event=event,
+            current_message=text,
+            chat_context=chat_context,
+            grounded_answer=grounded,
+            model_mode=self.model_mode,
+            custom_provider_id=self.custom_provider_id,
+            reply_style=self.reply_style,
+            reply_length_mode=self.reply_length_mode,
+            max_chars=self.max_chars,
+            custom_prompt=self.custom_prompt,
+            image_urls=image_urls if image_urls else None,
+        )
+
+        if not reply_text:
+            logger.warning("[TypeSafe][QA] LLM 未能围绕固定答案生成回复，回退为直接发送答案")
+            reply_text = grounded
+
+        await self._apply_reply_delay()
+        self.cooldown_tracker.record_reply_sent(session_id, event.get_sender_id())
+        event.stop_event()
+
+        # 真正发出回复属于低频关键事件，保留在 INFO
+        logger.info(
+            f"[TypeSafe][QA] 已回复会话 {session_id}（话题: {question_of(entry)}）"
+        )
+
+        chain = [Plain(text=reply_text)]
+        for url in resolved_images(match):
+            try:
+                chain.append(Image.fromURL(url=url))
+            except Exception as e:
+                logger.warning(f"[TypeSafe][QA] 构造图片组件失败 {url}: {e}")
+        yield event.chain_result(chain)
+
+    async def _qa_fallback_llm(self, event, text, session_id, recent_records, image_urls):
+        """QA 未命中且开启回退时，走原有的大模型自由回复。"""
+        logger.debug("[TypeSafe][QA] 未命中问答表，按配置回退到大模型自由回复")
+        chat_context = self.context_manager.format_context_string(recent_records)
+        reply_text = await self.reply_engine.generate_reply(
+            event=event,
+            current_message=text,
+            chat_context=chat_context,
+            model_mode=self.model_mode,
+            custom_provider_id=self.custom_provider_id,
+            reply_style=self.reply_style,
+            reply_length_mode=self.reply_length_mode,
+            max_chars=self.max_chars,
+            custom_prompt=self.custom_prompt,
+            image_urls=image_urls if image_urls else None,
+        )
+        if reply_text:
+            await self._apply_reply_delay()
+            self.cooldown_tracker.record_reply_sent(session_id, event.get_sender_id())
+            event.stop_event()
+            yield event.plain_result(reply_text)
+
     @filter.command("typesafe_status")
     async def command_typesafe_status(self, event: AstrMessageEvent):
         """显示 TypeSafe 智能自动回复插件运行状态"""
@@ -819,12 +1021,6 @@ class TypeSafeAutoReplyPlugin(Star):
             else "关闭 (秒回)"
         )
 
-        at_bot_mode_desc = {
-            "bypass_typesafe": "忽略 TypeSafe AI (直接调用 LLM 回复)",
-            "use_typesafe": "使用 TypeSafe AI 判定",
-            "pass_to_astrbot": "不处理 (交由 AstrBot 原生处理)",
-        }.get(self.at_bot_mode, self.at_bot_mode)
-
         status_text = (
             "=== TypeSafe 智能自动回复插件状态 ===\n"
             f"插件总开关: {'开启' if self.enable_plugin else '关闭'}\n"
@@ -832,7 +1028,7 @@ class TypeSafeAutoReplyPlugin(Star):
             f"TypeSafe 判定模型: {self.typesafe_model}\n"
             f"群聊自动回复: {'开启' if self.enable_group else '关闭'}\n"
             f"私聊自动回复: {'开启' if self.enable_private else '关闭'}\n"
-            f"@机器人处理策略: {at_bot_mode_desc}\n"
+            f"回复来源: {MODE_LABELS.get(self.qa_mode, self.qa_mode) if self.use_qa_table else '大模型自由回复'}\n"
             f"回复延时模拟: {delay_info}\n"
             f"模型模式: {self.model_mode} (指定ID: {self.custom_provider_id or '无'})\n"
             f"回复风格: {self.reply_style}\n"
@@ -896,6 +1092,22 @@ class TypeSafeAutoReplyPlugin(Star):
     # WebUI 配置中心（Dashboard 插件页）
     # ═══════════════════════════════════════════════════════════
 
+    def _plugin_data_dir(self):
+        """AstrBot 标准插件数据目录：data/plugin_data/<plugin_name>/。"""
+        from pathlib import Path
+
+        try:
+            from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+
+            base = Path(get_astrbot_data_path()) / "plugin_data" / "astrbot_plugin_typesafe_autoreply"
+        except Exception:
+            base = Path("data") / "plugin_data" / "astrbot_plugin_typesafe_autoreply"
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"[TypeSafe] 创建插件数据目录失败 {base}: {e}")
+        return base
+
     def _register_web_apis(self):
         """注册配置中心所需的全部 Web API 路由。
 
@@ -910,6 +1122,10 @@ class TypeSafeAutoReplyPlugin(Star):
             ("console/status", self._api_status, ["GET"], "读取运行状态与生效规则"),
             ("console/try", self._api_try, ["POST"], "在线试判一条消息"),
             ("console/probe", self._api_probe, ["POST"], "测试 TypeSafe API 连通性"),
+            ("console/qa/list", self._api_qa_list, ["GET"], "读取固定问答表"),
+            ("console/qa/save", self._api_qa_save, ["POST"], "保存某个作用域的问答表"),
+            ("console/qa/import", self._api_qa_import, ["POST"], "从 KeyReply 数据文件导入"),
+            ("console/qa/test", self._api_qa_test, ["POST"], "测试一条消息的命中结果"),
         )
         for path, handler, methods, desc in routes:
             try:
@@ -967,7 +1183,8 @@ class TypeSafeAutoReplyPlugin(Star):
             "reply_style": self.reply_style,
             "reply_length_mode": self.reply_length_mode,
             "min_confidence": self.min_confidence,
-            "at_bot_mode": self.at_bot_mode,
+            "reply_source": self.reply_source,
+            "qa_mode": self.qa_mode,
             "allowed_reply_types": list(self.allowed_reply_types),
         }
 
@@ -1093,12 +1310,6 @@ class TypeSafeAutoReplyPlugin(Star):
 
     async def _api_status(self) -> dict:
         """运行状态快照：等价于 /typesafe_status 指令的结构化版本。"""
-        at_bot_mode_desc = {
-            "bypass_typesafe": "忽略 TypeSafe AI (直接调用 LLM 回复)",
-            "use_typesafe": "使用 TypeSafe AI 判定",
-            "pass_to_astrbot": "不处理 (交由 AstrBot 原生处理)",
-        }.get(self.at_bot_mode, self.at_bot_mode)
-
         delay_info = {
             "enabled": bool(self.enable_reply_delay),
             "mode": self.reply_delay_mode,
@@ -1123,8 +1334,6 @@ class TypeSafeAutoReplyPlugin(Star):
             "custom_model": self.typesafe_custom_model,
             "timeout": self.typesafe_client.timeout,
             "failure_mode": self.failure_mode,
-            "at_bot_mode": self.at_bot_mode,
-            "at_bot_mode_desc": at_bot_mode_desc,
             "min_confidence": self.min_confidence,
             "reply_probability": self.reply_probability,
             "reply_style": self.reply_style,
@@ -1152,11 +1361,16 @@ class TypeSafeAutoReplyPlugin(Star):
             else 0,
             "debug_log": bool(self.debug_log),
             "active_sessions": active,
-            "detect_bot_name": bool(self.detect_bot_name),
-            "bot_aliases": list(self.bot_aliases),
             "force_reply_mode": self.force_reply_mode,
             "force_trigger_regex": self.force_trigger_regex,
             "ignore_regex": self.ignore_regex,
+            "qa_mode": self.qa_mode,
+            "qa_mode_label": MODE_LABELS.get(self.qa_mode, self.qa_mode),
+            "use_qa_table": bool(self.use_qa_table),
+            "qa_enable_jev_topic": bool(self.enable_jev_topic),
+            "qa_min_confidence": self.qa_min_confidence,
+            "qa_fallback_to_llm": bool(self.qa_fallback_to_llm),
+            "qa_summary": self.qa_store.scope_summary(),
             "regex_ok": {
                 "force_trigger": bool(self.force_trigger_regex_pattern)
                 or not (self.force_trigger_regex or "").strip(),
@@ -1276,6 +1490,170 @@ class TypeSafeAutoReplyPlugin(Star):
             "elapsed_ms": round(elapsed_ms, 1),
             "rate_limit_used": self.typesafe_client.rate_limiter.current_load(),
         }
+
+    # ── 固定问答表 API ────────────────────────────────────
+    async def _api_qa_list(self) -> dict:
+        """返回全部问答表、作用域摘要与导入候选路径。"""
+        tables = []
+        for t in self.qa_store.all_tables():
+            tables.append({
+                "scope": t.scope,
+                "scope_id": t.scope_id,
+                "key": t.key,
+                "label": t.label,
+                "entries": t.entries,
+            })
+        return {
+            "tables": tables,
+            "summary": self.qa_store.scope_summary(),
+            "data_file": str(self.qa_store.path),
+            "import_candidates": self.qa_store.find_keyreply_files(),
+            "configured_import_path": self.qa_import_path,
+            "mode": self.qa_mode,
+            "mode_label": MODE_LABELS.get(self.qa_mode, self.qa_mode),
+            "enable_jev_topic": self.enable_jev_topic,
+            "use_qa_table": self.use_qa_table,
+            "qa_min_confidence": self.qa_min_confidence,
+            "qa_fallback_to_llm": self.qa_fallback_to_llm,
+            "context_message_count": self.context_message_count,
+        }
+
+    async def _api_qa_save(self):
+        """保存某个作用域的问答表（整体替换）。"""
+        from quart import request
+
+        payload = await request.get_json(silent=True) or {}
+        scope = str(payload.get("scope") or SCOPE_GLOBAL)
+        scope_id = str(payload.get("scope_id") or "").strip()
+        entries = payload.get("entries")
+
+        if scope not in (SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE):
+            return {"message": f"未知作用域: {scope}"}, 400
+        if scope in (SCOPE_GROUP, SCOPE_PRIVATE) and not scope_id:
+            return {"message": "群聊/私聊专属表必须提供 scope_id"}, 400
+        if not isinstance(entries, list):
+            return {"message": "entries 必须是数组"}, 400
+
+        table = self.qa_store.replace_table(scope, scope_id, entries)
+        if not self.qa_store.save():
+            return {"message": "写入数据文件失败，请检查目录权限"}, 500
+
+        logger.info(
+            f"[TypeSafe][QA] 已保存问答表 {table.label}，共 {len(table.entries)} 条"
+        )
+        return {
+            "message": "ok",
+            "table": {"scope": table.scope, "scope_id": table.scope_id, "entries": table.entries},
+            "summary": self.qa_store.scope_summary(),
+        }
+
+    async def _api_qa_import(self):
+        """从 KeyReply 的 triggers.yml 导入问答对。"""
+        from quart import request
+
+        payload = await request.get_json(silent=True) or {}
+        scope = str(payload.get("scope") or SCOPE_GLOBAL)
+        scope_id = str(payload.get("scope_id") or "").strip()
+        path_text = str(payload.get("path") or self.qa_import_path or "").strip()
+
+        if scope not in (SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE):
+            return {"message": f"未知作用域: {scope}"}, 400
+        if scope in (SCOPE_GROUP, SCOPE_PRIVATE) and not scope_id:
+            return {"message": "群聊/私聊专属表必须提供 scope_id"}, 400
+
+        from pathlib import Path
+
+        if not path_text:
+            candidates = self.qa_store.find_keyreply_files()
+            if not candidates:
+                return {
+                    "ok": False,
+                    "message": "未找到 KeyReply 数据文件，请在设置中手动填写 triggers.yml 的完整路径",
+                }, 404
+            path_text = candidates[0]
+
+        result = self.qa_store.import_keyreply_file(Path(path_text), scope, scope_id)
+        status = 200 if result.get("ok") else 400
+        result["path"] = path_text
+        result["summary"] = self.qa_store.scope_summary()
+        return result, status
+
+    async def _api_qa_test(self):
+        """测试一条消息在当前配置下的命中结果（不发送任何消息）。"""
+        from quart import request
+
+        payload = await request.get_json(silent=True) or {}
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return {"ok": False, "message": "请输入要测试的消息内容"}, 400
+
+        scope = str(payload.get("scope") or SCOPE_GLOBAL)
+        scope_id = str(payload.get("scope_id") or "").strip()
+        if scope not in (SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE):
+            return {"message": f"未知作用域: {scope}"}, 400
+
+        # 经典模式：直接看正则命中
+        classic = self.qa_store.find_reply(text, scope, scope_id)
+        classic_view = None
+        if classic:
+            entry = classic.get("entry") or {}
+            classic_view = {
+                "question": question_of(entry),
+                "answer": answer_text_of(entry),
+                "images": answer_images_of(entry),
+                "table_label": classic.get("table_label"),
+            }
+
+        # Jev 模式：真实调用一次话题判断
+        jev_view = None
+        questions = self.qa_store.candidate_questions(scope, scope_id)
+        if self.typesafe_client.is_configured() and questions:
+            state = {
+                "recent_chat": [],
+                "current_message": {"sender": "测试用户", "text": text},
+            }
+            started = time.perf_counter()
+            topic = await self.classifier.match_topic(state=state, questions=questions)
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            grounded = None
+            if topic.matched:
+                m = self.qa_store.find_reply_by_question(topic.question, scope, scope_id)
+                if m:
+                    grounded = answer_text_of(m.get("entry"))
+            jev_view = {
+                "matched": topic.matched,
+                "question": topic.question,
+                "confidence_level": topic.confidence_level,
+                "confidence_score": round(float(topic.confidence_score), 4),
+                "reason": topic.reason,
+                "is_fallback": topic.is_fallback,
+                "answer": grounded,
+                "confidence_ok": MessageClassifier.is_confidence_sufficient(
+                    topic.confidence_level, self.qa_min_confidence
+                ),
+                "elapsed_ms": round(elapsed_ms, 1),
+            }
+        elif not questions:
+            jev_view = {"matched": False, "reason": "问答表为空，无可判断的话题"}
+        else:
+            jev_view = {"matched": False, "reason": "TypeSafe API Key 未配置，无法进行话题判断"}
+
+        return {
+            "ok": True,
+            "text": text,
+            "scope": scope,
+            "scope_id": scope_id,
+            "mode": self.qa_mode,
+            "mode_label": MODE_LABELS.get(self.qa_mode, self.qa_mode),
+            "candidate_count": len(questions),
+            "classic": classic_view,
+            "jev": jev_view,
+            "would_reply": bool(jev_view and jev_view.get("matched") and jev_view.get("confidence_ok"))
+            if self.qa_mode == MODE_JEV
+            else bool(classic_view),
+        }
+
+    # ── 固定问答表 API END ────────────────────────────────
 
     async def terminate(self):
         """插件卸载或停用时的资源释放"""

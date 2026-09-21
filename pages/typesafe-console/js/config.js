@@ -58,6 +58,18 @@
       ]
     },
     {
+      id: 'qa',
+      title: '固定问答表（KeyReply）',
+      desc: '回复来源选择「固定问答表」时生效：先由本地正则召回，命中才触发 Jev 审核与 LLM 生成；未命中一律静默。',
+      fields: [
+        { key: 'reply_source', type: 'select', label: '回复来源', options: ['大模型自由回复', '固定问答表 (KeyReply)'], wide: true, desc: '大模型自由回复 = 维持原有两阶段 LLM 流程；固定问答表 = 由 QA 表驱动回复。' },
+        { key: 'enable_jev_topic', type: 'bool', label: '启用 Jev 话题判断', desc: '开启 = 正则召回后交给 Jev 确认话题，再由 LLM 围绕该条答案生成；关闭 = 回退 KeyReply 原样，正则命中直接发送固定答案。' },
+        { key: 'qa_min_confidence', type: 'select', label: '话题命中最低置信度', options: ['高', '中', '低'], desc: 'Jev 确认话题的置信度低于该等级时视为未命中，保持静默。' },
+        { key: 'qa_fallback_to_llm', type: 'bool', label: 'QA 未命中时回退大模型', desc: '关闭（等同 KeyReply 行为）= 未命中就静默；开启 = 未命中改用 LLM 自由回复。' },
+        { key: 'qa_import_path', type: 'text', label: 'KeyReply 数据文件路径', desc: '留空则自动探测 data/plugins/keyword_reply/triggers.yml。', mono: true }
+      ]
+    },
+    {
       id: 'delay',
       title: '模拟真人延时',
       desc: '发送前的思考与打字延时，避免「秒回」显得过于机械。',
@@ -104,9 +116,6 @@
         { key: 'ignore_keywords', type: 'list', label: '忽略关键词', desc: '每行一个关键词，命中后保持静默。' },
         { key: 'force_trigger_regex', type: 'text', label: '强制触发正则', desc: '留空表示不启用。正则写错时插件会打印警告并忽略该规则。', mono: true },
         { key: 'ignore_regex', type: 'text', label: '忽略正则', desc: '留空表示不启用。', mono: true },
-        { key: 'detect_bot_name', type: 'bool', label: '启用机器人名称/别名检测', desc: '消息中提到机器人名字或别名时，视同被呼叫。' },
-        { key: 'bot_aliases', type: 'list', label: '机器人别名列表', desc: '每行一个别名，例如「小白」。' },
-        { key: 'at_bot_mode', type: 'select', label: '被 @ 机器人时处理策略', options: ['忽略 TypeSafe AI (直接调用 LLM 回复)', '使用 TypeSafe AI 判定', '不处理，交由 AstrBot 原生处理'], wide: true, desc: '显式 @ 机器人或回复机器人消息时的行为。' }
       ]
     },
     {

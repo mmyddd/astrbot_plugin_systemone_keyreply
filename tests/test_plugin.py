@@ -20,7 +20,6 @@ from utils import (
     normalize_force_reply_mode,
     normalize_reply_delay_mode,
     normalize_typesafe_model,
-    normalize_at_bot_mode,
 )
 from context_manager import ContextManager
 from classifier import MessageClassifier, ClassificationDecision
@@ -80,51 +79,6 @@ class TestFilters(unittest.TestCase):
         self.assertFalse(MessageFilter.is_pure_media_message("请问这个报错怎么解决？"))
         self.assertFalse(MessageFilter.is_pure_media_message("[图片] 请问这怎么看？"))
 
-    def test_is_explicitly_at_bot(self):
-        # Mock normal event without At
-        event_normal = MagicMock()
-        event_normal.get_self_id.return_value = "10001"
-        event_normal.get_messages.return_value = []
-        event_normal.get_message_str.return_value = "今天几号啊"
-        self.assertFalse(MessageFilter.is_explicitly_at_bot(event_normal))
-
-        # Mock event with At(qq="10001")
-        at_comp = MagicMock()
-        at_comp.qq = "10001"
-        event_at = MagicMock()
-        event_at.get_self_id.return_value = "10001"
-        event_at.get_messages.return_value = [at_comp]
-        event_at.get_message_str.return_value = " 今天几号啊"
-        self.assertTrue(MessageFilter.is_explicitly_at_bot(event_at))
-
-        # Mock event with At other user (qq="20002")
-        at_other = MagicMock()
-        at_other.qq = "20002"
-        event_other = MagicMock()
-        event_other.get_self_id.return_value = "10001"
-        event_other.get_messages.return_value = [at_other]
-        event_other.get_message_str.return_value = " 看看这个"
-        self.assertFalse(MessageFilter.is_explicitly_at_bot(event_other))
-
-        # Mock event with Reply to bot
-        reply_comp = MagicMock()
-        reply_comp.sender_id = "10001"
-        event_reply = MagicMock()
-        event_reply.get_self_id.return_value = "10001"
-        event_reply.get_messages.return_value = [reply_comp]
-        event_reply.get_message_str.return_value = "好的知道了"
-        self.assertTrue(MessageFilter.is_explicitly_at_bot(event_reply))
-
-    def test_at_all_not_treated_as_at_bot(self):
-        # AtAll component should NOT be treated as @bot
-        at_all_comp = MagicMock()
-        at_all_comp.__class__.__name__ = "AtAll"
-        event_at_all = MagicMock()
-        event_at_all.get_self_id.return_value = "10001"
-        event_at_all.get_messages.return_value = [at_all_comp]
-        event_at_all.get_message_str.return_value = "@全体成员 今晚开会"
-        self.assertFalse(MessageFilter.is_explicitly_at_bot(event_at_all))
-
     def test_whitelist_modes(self):
         # Whitelist only
         allowed, _ = MessageFilter.check_whitelist_blacklist(
@@ -168,12 +122,6 @@ class TestFilters(unittest.TestCase):
         self.assertTrue(MessageFilter.is_command_message("!status"))
         self.assertTrue(MessageFilter.is_command_message("。ping"))
         self.assertFalse(MessageFilter.is_command_message("请问这个怎么弄？"))
-
-    def test_bot_alias_detection(self):
-        aliases = ["小白", "机器人", "AI"]
-        self.assertTrue(MessageFilter.is_bot_name_mentioned("小白，你怎么看？", aliases))
-        self.assertTrue(MessageFilter.is_bot_name_mentioned("请问机器人还在吗", aliases))
-        self.assertFalse(MessageFilter.is_bot_name_mentioned("今天天气不错", aliases))
 
     def test_keywords_and_regex(self):
         keywords = ["有人知道", "求助"]
@@ -233,7 +181,7 @@ class TestCooldownAndUtils(unittest.TestCase):
         tracker.record_user_message(session, is_bot=False, session_cooldown=30)
         self.assertFalse(tracker.is_continuous_limit_reached(session, max_continuous=2))
 
-        # Explicit reset (e.g. on @bot)
+        # Explicit reset
         tracker.record_reply_sent(session, user)
         tracker.record_reply_sent(session, user)
         self.assertTrue(tracker.is_continuous_limit_reached(session, max_continuous=2))
@@ -293,12 +241,6 @@ class TestCooldownAndUtils(unittest.TestCase):
         self.assertEqual(normalize_typesafe_model("自定义模型", "custom-jev-v2"), "custom-jev-v2")
 
         # At-bot mode normalization
-        self.assertEqual(normalize_at_bot_mode(True), "bypass_typesafe")
-        self.assertEqual(normalize_at_bot_mode(False), "use_typesafe")
-        self.assertEqual(normalize_at_bot_mode("忽略 TypeSafe AI (直接调用 LLM 回复)"), "bypass_typesafe")
-        self.assertEqual(normalize_at_bot_mode("使用 TypeSafe AI 判定"), "use_typesafe")
-        self.assertEqual(normalize_at_bot_mode("经由 TypeSafe AI 判断"), "use_typesafe")
-        self.assertEqual(normalize_at_bot_mode("不处理，交由 AstrBot 原生处理"), "pass_to_astrbot")
 
     def test_rate_limiter(self):
         limiter = SlidingWindowRateLimiter(limit_per_minute=2)
@@ -433,11 +375,14 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
             "reply_probability": 100,
             "enable_reply_delay": False,  # Unit test fast execution
             "debug_log": True,
+            # 固定问答表默认关闭，保持既有用例继续覆盖「大模型自由回复」路径
+            "reply_source": "大模型自由回复",
+            "enable_jev_topic": True,
         }
         self.plugin = TypeSafeAutoReplyPlugin(self.context, self.config)
 
     def _make_mock_event(
-        self, text, sender_id="user_1", group_id="group_1", is_at=False, is_private=False
+        self, text, sender_id="user_1", group_id="group_1", is_private=False
     ):
         event = MagicMock()
         event.get_message_str.return_value = text
@@ -451,18 +396,8 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
         event.stop_event = MagicMock()
         event.plain_result = lambda msg: {"type": "plain", "text": msg}
 
-        at_comp = MagicMock()
-        at_comp.qq = "bot_id"
-        event.get_messages.return_value = [at_comp] if is_at else []
+        event.get_messages.return_value = []
         return event
-
-    async def test_bypass_on_at(self):
-        # When really @ the bot
-        event = self._make_mock_event("你好机器人", is_at=True)
-        results = [res async for res in self.plugin.on_group_message(event)]
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["text"], "这是测试自动回复。")
-        event.stop_event.assert_called_once()
 
     async def test_typesafe_decision_positive(self):
         self.plugin.classifier.classify_message = AsyncMock(
@@ -476,7 +411,7 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
             )
         )
         # Normal message (not @ bot)
-        event = self._make_mock_event("请问 Docker 怎么安装？", is_at=False)
+        event = self._make_mock_event("请问 Docker 怎么安装？")
         results = [res async for res in self.plugin.on_group_message(event)]
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["text"], "这是测试自动回复。")
@@ -500,7 +435,7 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
             )
         )
         # Normal chat (not @ bot)
-        event = self._make_mock_event("今天天气真好啊", is_at=False)
+        event = self._make_mock_event("今天天气真好啊")
         results = [res async for res in self.plugin.on_group_message(event)]
         self.assertEqual(len(results), 0)
         self.plugin.classifier.classify_message.assert_called_once()
@@ -579,7 +514,7 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        event = self._make_mock_event("", is_at=False)
+        event = self._make_mock_event("")
         img_comp = MagicMock()
         img_comp.__class__.__name__ = "Image"
         img_comp.file = "https://example.com/screenshot.png"
@@ -632,59 +567,10 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
                 urgency="normal",
             )
         )
-        event = self._make_mock_event("你觉得兴发集团怎么样", is_at=False)
+        event = self._make_mock_event("你觉得兴发集团怎么样")
         results = [res async for res in self.plugin.on_group_message(event)]
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["text"], "这是测试自动回复。")
-
-    async def test_at_bot_mode_use_typesafe_positive(self):
-        # 当配置为“使用 TypeSafe AI 判定”且判断需要回复时，执行回复
-        self.plugin.at_bot_mode = "use_typesafe"
-        self.plugin.classifier.classify_message = AsyncMock(
-            return_value=ClassificationDecision(
-                should_reply=True,
-                reply_type="greeting",
-                confidence_level="high",
-                confidence_score=0.92,
-                reason="用户@机器人打招呼",
-                urgency="normal",
-            )
-        )
-        event = self._make_mock_event("小白你好", is_at=True)
-        results = [res async for res in self.plugin.on_group_message(event)]
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["text"], "这是测试自动回复。")
-        self.plugin.classifier.classify_message.assert_called_once()
-        event.stop_event.assert_called_once()
-
-    async def test_at_bot_mode_use_typesafe_negative(self):
-        # 当配置为“使用 TypeSafe AI 判定”且判断无需回复时，保持静默
-        self.plugin.at_bot_mode = "use_typesafe"
-        self.plugin.classifier.classify_message = AsyncMock(
-            return_value=ClassificationDecision(
-                should_reply=False,
-                reply_type="other",
-                confidence_level="high",
-                confidence_score=0.90,
-                reason="无意义刷屏不回复",
-                urgency="low",
-            )
-        )
-        event = self._make_mock_event("小白 111", is_at=True)
-        results = [res async for res in self.plugin.on_group_message(event)]
-        self.assertEqual(len(results), 0)
-        self.plugin.classifier.classify_message.assert_called_once()
-        event.stop_event.assert_not_called()
-
-    async def test_at_bot_mode_pass_to_astrbot(self):
-        # 当配置为“不处理，交由 AstrBot 原生处理”时，本插件直接放行且不截断事件
-        self.plugin.at_bot_mode = "pass_to_astrbot"
-        self.plugin.classifier.classify_message = AsyncMock()
-        event = self._make_mock_event("小白在吗", is_at=True)
-        results = [res async for res in self.plugin.on_group_message(event)]
-        self.assertEqual(len(results), 0)
-        self.plugin.classifier.classify_message.assert_not_called()
-        event.stop_event.assert_not_called()
 
     async def test_early_short_circuit_disabled_private(self):
         # 当未启用私聊时，私聊消息极速短路退出，不写入历史管理器
@@ -696,5 +582,4 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

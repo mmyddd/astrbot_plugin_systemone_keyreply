@@ -8,12 +8,6 @@
   const $ = TS.$, $$ = TS.$$, esc = TS.esc, el = TS.el, format = TS.format, state = TS.state;
 
   /* ══════════════════════ 运行状态 ══════════════════════ */
-  const AT_BOT_LABEL = {
-    bypass_typesafe: '忽略 TypeSafe 直接回复',
-    use_typesafe: '交由 TypeSafe 判定',
-    pass_to_astrbot: '交由 AstrBot 原生处理'
-  };
-
   const FAILURE_LABEL = {
     silent: '静默，不回复',
     rule_based: '基础规则判断',
@@ -69,7 +63,15 @@
     ].join(' '));
     add('判定模型', esc(s.model || '—') + (s.custom_model ? ' <span class="field-meta">(自定义)</span>' : ''));
     add('失败处理策略', pill(FAILURE_LABEL[s.failure_mode] || s.failure_mode || '—', s.failure_mode === 'silent' ? 'mute' : 'brand'));
-    add('@机器人策略', pill(AT_BOT_LABEL[s.at_bot_mode] || s.at_bot_mode_desc || '—', 'brand'));
+    add('回复来源', s.use_qa_table
+      ? pill(s.qa_mode_label || '固定问答表', 'brand')
+        + (s.qa_mode === 'jev' ? ' <span class="field-meta">Jev 审核 + LLM 围绕答案回复</span>' : ' <span class="field-meta">正则命中直接发送答案</span>')
+      : pill('大模型自由回复', 'mute'));
+    if (s.use_qa_table && s.qa_summary) {
+      add('问答表规模', '全局 ' + format.num(s.qa_summary.global_entries) + ' 条 · 群表 '
+        + format.num((s.qa_summary.groups || []).length) + ' 个 · 私聊表 '
+        + format.num((s.qa_summary.privates || []).length) + ' 个');
+    }
     add('置信度门槛', pill(CONFIDENCE_LABEL[s.min_confidence] || s.min_confidence || '—', 'brand')
       + ' <span class="field-meta">判定低于该等级将保持静默</span>');
     add('回复概率', format.percent(s.reply_probability));

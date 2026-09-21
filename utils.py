@@ -92,7 +92,7 @@ class CooldownTracker:
             self._continuous_reply_count[session_id] = 0
 
     def reset_continuous(self, session_id: str):
-        """显式重置会话的连续回复计数（例如用户主动 @机器人 时）"""
+        """显式重置某个会话的连续回复计数"""
         if session_id:
             self._continuous_reply_count[session_id] = 0
             self._intervening_messages[session_id] = 0
@@ -393,25 +393,3 @@ def normalize_typesafe_model(selected: Any, custom: str = "") -> str:
     if "自定" in s:
         return c if c else "jev-latest"
     return str(selected).strip() if str(selected).strip() else "jev-latest"
-
-
-def normalize_at_bot_mode(val: Any) -> str:
-    """
-    归一化被 @ 机器人时的处理模式
-    :param val: 配置值 (bool 或 str)
-    :return: 'bypass_typesafe' | 'use_typesafe' | 'pass_to_astrbot'
-    """
-    if isinstance(val, bool):
-        return "bypass_typesafe" if val else "use_typesafe"
-    s = str(val or "").strip().lower()
-    if "原生" in s or "不处理" in s or "pass_to_astrbot" in s or "ignore_at" in s:
-        return "pass_to_astrbot"
-    if "使用" in s or "判断" in s or "判定" in s or "use_typesafe" in s:
-        if "忽略" in s or "bypass" in s:
-            return "bypass_typesafe"
-        return "use_typesafe"
-    if "忽略" in s or "绕过" in s or "直接" in s or "bypass" in s:
-        return "bypass_typesafe"
-    return "bypass_typesafe"
-
-

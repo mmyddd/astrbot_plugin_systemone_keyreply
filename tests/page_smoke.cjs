@@ -104,10 +104,13 @@ TS.state.config = cfg;
 const checks = [];
 const t = (n, fn) => { try { fn(); checks.push([n, true, '']); } catch (e) { checks.push([n, false, e.message]); } };
 
-t('渲染 48 个字段控件', () => {
+t('渲染全部 schema 字段控件', () => {
   TS.config.render();
+  const expected = Object.keys(schema).length;
   const fields = document.querySelectorAll('[data-field]');
-  if (fields.length < 48) throw new Error('只渲染出 ' + fields.length + ' 个控件，期望 >= 48');
+  if (fields.length < expected) {
+    throw new Error('只渲染出 ' + fields.length + ' 个控件，schema 共 ' + expected + ' 项');
+  }
 });
 t('脏字段可被 collect 收集', () => {
   TS.state.dirty.clear(); TS.state.dirty.add('enable_plugin'); TS.state.dirty.add('max_chars');
@@ -121,18 +124,20 @@ t('多选控件 collect 返回数组', () => {
   if (!Array.isArray(patch.allowed_reply_types)) throw new Error('不是数组: ' + typeof patch.allowed_reply_types);
 });
 t('列表控件 collect 按行拆分', () => {
-  TS.state.dirty.clear(); TS.state.dirty.add('bot_aliases');
-  const el2 = document.querySelector('[data-field="bot_aliases"]');
-  if (!el2) throw new Error('找不到 bot_aliases 控件');
+  TS.state.dirty.clear(); TS.state.dirty.add('ignore_keywords');
+  const el2 = document.querySelector('[data-field="ignore_keywords"]');
+  if (!el2) throw new Error('找不到 ignore_keywords 控件');
   el2.value = 'a\nb\nc';
   const patch = TS.config.collect();
-  if (JSON.stringify(patch.bot_aliases) !== JSON.stringify(['a','b','c'])) throw new Error(JSON.stringify(patch.bot_aliases));
+  if (JSON.stringify(patch.ignore_keywords) !== JSON.stringify(['a','b','c'])) throw new Error(JSON.stringify(patch.ignore_keywords));
 });
 t('fillDefaults() 不抛错', () => TS.config.fillDefaults());
 t('renderStatus 空态 / 有数据', () => { TS.state.status = null; TS.views.renderStatus();
   TS.state.status = { api_configured: true, model: 'jev-latest', active_sessions: 3, rate_limit_used: 5,
     rate_limit_per_minute: 60, enable_plugin: true, enable_group: true, enable_private: false, failure_mode: 'silent',
-    at_bot_mode: 'bypass_typesafe', min_confidence: 'medium', reply_probability: 100, allowed_reply_types: ['明确提问'],
+    min_confidence: 'medium', reply_probability: 100, allowed_reply_types: ['明确提问'],
+    use_qa_table: true, qa_mode: 'jev', qa_mode_label: 'Jev 话题模式（语义路由，LLM 围绕答案生成）',
+    qa_summary: { global_entries: 3, groups: ['111'], privates: [], total_entries: 4 },
     reply_style: '自然', reply_length_mode: '简短', max_chars: 200, model_mode: 'follow_session', custom_provider_id: '',
     delay: { enabled: true, mode: 'random', min: 1, max: 3, fixed: 2 }, session_cooldown: 30, user_cooldown: 30,
     max_continuous_replies: 2, filter_mode: 'blacklist_only', context_message_count: 3, cache_enabled: false,
