@@ -6,7 +6,7 @@
   'use strict';
 
   const TS = window.TS;
-  const $ = TS.$, esc = TS.esc, el = TS.el, format = TS.format, state = TS.state;
+  const $ = TS.$, $$ = TS.$$, esc = TS.esc, el = TS.el, format = TS.format, state = TS.state;
 
   /* ── 字段定义：与 _conf_schema.json 一一对应 ─────────────
      type: bool | int | text | textarea | select | list | multiselect
