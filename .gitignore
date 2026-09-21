@@ -5,3 +5,6 @@ __pycache__/
 .venv/
 data/
 .pytest_cache/
+
+# AstrBot 插件数据目录（本地运行时生成）
+plugin_data/

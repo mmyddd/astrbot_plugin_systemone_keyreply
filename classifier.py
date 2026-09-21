@@ -56,6 +56,20 @@ class ClassificationDecision:
         return REPLY_TYPE_NAMES.get(self.reply_type, self.reply_type)
 
 
+@dataclass
+class TopicMatch:
+    """Jev 话题匹配结果：判断消息是否属于某个已知话题（QA 表中的 question）。"""
+
+    matched: bool
+    question: str                      # 命中的原始问题文本（未命中为空）
+    index: int                         # 命中项在候选列表中的下标，-1 表示未命中
+    confidence_score: float
+    confidence_level: str
+    reason: str
+    is_fallback: bool = False
+    candidates: Optional[List[str]] = None
+
+
 class MessageClassifier:
     """负责将消息转换为 TypeSafe System One 提示，并解析结构化裁决结果"""
 
@@ -255,4 +269,141 @@ class MessageClassifier:
         return (
             reply_type in canonical_allowed
             or REPLY_TYPE_NAMES.get(reply_type, "") in canonical_allowed
+        )
+
+    # ═══════════════════════════════════════════════════════════
+    # 固定问答表（KeyReply）话题匹配
+    # ═══════════════════════════════════════════════════════════
+
+    MAX_TOPIC_CANDIDATES = 40
+
+    def build_topic_question(self, questions: List[str]) -> Optional[Choice]:
+        """以 QA 表的问题文本作为 criteria，构造「话题判断关键词」Choice。
+
+        Choice 的 criteria 键为候选键名（q0/q1/...），值即该条问题的原文，
+        因此 Jev 实际收到的就是「这些话题关键词」，命中的键名可反查回原问题。
+        """
+        candidates = [str(q).strip() for q in (questions or []) if str(q).strip()]
+        if not candidates:
+            return None
+        # 去重保序，并限制候选数量，避免超出插件单请求的 255 项约束
+        seen: set = set()
+        unique: List[str] = []
+        for q in candidates:
+            if q in seen:
+                continue
+            seen.add(q)
+            unique.append(q)
+        unique = unique[: self.MAX_TOPIC_CANDIDATES]
+
+        criteria: Dict[str, str] = {}
+        for idx, text in enumerate(unique):
+            criteria[f"q{idx}"] = text
+        criteria["none"] = "以上话题都不匹配（消息与这些话题无关）"
+
+        return Choice(
+            instructions=(
+                "你负责判断群聊中的当前消息是否属于下列已知话题之一。\n"
+                "下列每一项都是一个「话题判断关键词」，代表机器人已经准备好固定答案的话题。\n"
+                "判断规则：\n"
+                "- 只要消息在语义上询问或讨论其中某个话题，就选中对应的那一项；\n"
+                "- 允许口语化、错别字、同义改写与省略（例如「咋装」「怎么弄」都算询问安装类话题）；\n"
+                "- 模糊匹配符 % 代表任意内容，命中它两侧的文字即可；\n"
+                "- 若消息与所有话题都无关，选择 none。\n"
+                "宁可选择 none，也不要把无关消息硬套到某个话题上。"
+            ),
+            criteria=criteria,
+        )
+
+    async def match_topic(
+        self,
+        state: dict,
+        questions: List[str],
+        cache_key_text: Optional[str] = None,
+    ) -> TopicMatch:
+        """调用 Jev 判断消息属于哪个已知话题。"""
+        candidates = [str(q).strip() for q in (questions or []) if str(q).strip()]
+        if not candidates:
+            return TopicMatch(
+                matched=False, question="", index=-1,
+                confidence_score=0.0, confidence_level="low",
+                reason="问答表为空，无法进行话题匹配",
+                candidates=[],
+            )
+
+        question = self.build_topic_question(candidates)
+        if question is None:
+            return TopicMatch(
+                matched=False, question="", index=-1,
+                confidence_score=0.0, confidence_level="low",
+                reason="话题候选为空",
+                candidates=candidates,
+            )
+
+        api_result = await self.client_wrapper.call_system_one(
+            state=state,
+            questions={"topic": question},
+            cache_key_text=cache_key_text,
+        )
+
+        if not api_result or not api_result.get("success"):
+            raw_failure_mode = (
+                api_result.get("failure_mode") if api_result else self.client_wrapper.failure_mode
+            )
+            failure_mode = normalize_failure_mode(raw_failure_mode)
+            error_reason = api_result.get("error_reason", "unknown") if api_result else "no_result"
+            # 话题匹配失败时一律不匹配：宁可静默，也不猜测性地回复错误答案
+            return TopicMatch(
+                matched=False, question="", index=-1,
+                confidence_score=0.0, confidence_level="low",
+                reason=f"TypeSafe 话题判断失败({failure_mode}): {error_reason}",
+                is_fallback=True,
+                candidates=candidates,
+            )
+
+        raw_choices = api_result.get("raw_choices", {})
+        topic_choice = raw_choices.get("topic")
+        if not topic_choice or not getattr(topic_choice, "choice", None):
+            return TopicMatch(
+                matched=False, question="", index=-1,
+                confidence_score=0.5, confidence_level="medium",
+                reason="TypeSafe 未返回话题选择结果",
+                candidates=candidates,
+            )
+
+        key = str(topic_choice.choice)
+        try:
+            score = float(topic_choice.confidence)
+        except (ValueError, TypeError):
+            score = 0.5
+        level = self.map_confidence_level(score)
+
+        if key == "none" or not key.startswith("q"):
+            return TopicMatch(
+                matched=False, question="", index=-1,
+                confidence_score=score, confidence_level=level,
+                reason=f"TypeSafe 判定不属于任何已知话题 (confidence={score:.2f})",
+                candidates=candidates,
+            )
+
+        try:
+            idx = int(key[1:])
+        except ValueError:
+            idx = -1
+        if idx < 0 or idx >= len(candidates):
+            return TopicMatch(
+                matched=False, question="", index=-1,
+                confidence_score=score, confidence_level=level,
+                reason=f"TypeSafe 返回了越界的话题下标: {key}",
+                candidates=candidates,
+            )
+
+        return TopicMatch(
+            matched=True,
+            question=candidates[idx],
+            index=idx,
+            confidence_score=score,
+            confidence_level=level,
+            reason=f"TypeSafe 判定命中话题「{candidates[idx]}」(confidence={score:.2f})",
+            candidates=candidates,
         )
