@@ -17,7 +17,6 @@ from utils import (
     normalize_reply_style,
     normalize_reply_length_mode,
     normalize_filter_mode,
-    normalize_force_reply_mode,
     normalize_reply_delay_mode,
     normalize_typesafe_model,
 )
@@ -123,16 +122,6 @@ class TestFilters(unittest.TestCase):
         self.assertTrue(MessageFilter.is_command_message("。ping"))
         self.assertFalse(MessageFilter.is_command_message("请问这个怎么弄？"))
 
-    def test_keywords_and_regex(self):
-        keywords = ["有人知道", "求助"]
-        self.assertTrue(MessageFilter.matches_keywords("有人知道 Docker 怎么装吗？", keywords))
-        self.assertFalse(MessageFilter.matches_keywords("好的谢谢", keywords))
-
-        regex = r"^(有人知道|求助)"
-        self.assertTrue(MessageFilter.matches_regex("求助！系统崩了", regex))
-        self.assertFalse(MessageFilter.matches_regex("系统崩了，求助", regex))
-
-
 class TestCooldownAndUtils(unittest.TestCase):
     def test_cooldown_tracker(self):
         tracker = CooldownTracker()
@@ -232,7 +221,6 @@ class TestCooldownAndUtils(unittest.TestCase):
 
         self.assertEqual(normalize_reply_length_mode("简短 (50~100字)"), "short")
         self.assertEqual(normalize_filter_mode("仅黑名单"), "blacklist_only")
-        self.assertEqual(normalize_force_reply_mode("直接回复"), "direct_reply")
         self.assertEqual(normalize_reply_delay_mode("固定延时"), "fixed")
 
         # TypeSafe model normalization
@@ -582,4 +570,3 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

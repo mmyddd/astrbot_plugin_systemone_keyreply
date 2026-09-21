@@ -44,7 +44,6 @@ try:
         normalize_reply_style,
         normalize_reply_length_mode,
         normalize_filter_mode,
-        normalize_force_reply_mode,
         normalize_typesafe_model,
     )
 except (ImportError, ValueError):
@@ -76,7 +75,6 @@ except (ImportError, ValueError):
         normalize_reply_style,
         normalize_reply_length_mode,
         normalize_filter_mode,
-        normalize_force_reply_mode,
         normalize_typesafe_model,
     )
 
@@ -100,8 +98,6 @@ _EDITABLE_LIST_FIELDS = (
     "session_blacklist",
     "user_whitelist",
     "user_blacklist",
-    "force_reply_keywords",
-    "ignore_keywords",
 )
 
 _EDITABLE_TEXT_FIELDS = (
@@ -120,9 +116,6 @@ _EDITABLE_TEXT_FIELDS = (
     "custom_prompt",
     "reply_delay_mode",
     "filter_mode",
-    "force_reply_mode",
-    "force_trigger_regex",
-    "ignore_regex",
 )
 
 _EDITABLE_BOOL_FIELDS = (
@@ -347,40 +340,12 @@ class TypeSafeAutoReplyPlugin(Star):
             str(x).strip() for x in self.user_blacklist if str(x).strip()
         }
 
-        # 8. 高级过滤
+        # 8. 消息卫生过滤（仅长度；关键词/正则过滤已随 QA 表统一而移除）
         self.min_message_length = self.config.get("min_message_length", 2)
         self.max_message_length = self.config.get("max_message_length", 2000)
         self.ignore_commands = self.config.get("ignore_commands", True)
         self.ignore_bots = self.config.get("ignore_bots", True)
         self.ignore_pure_media = self.config.get("ignore_pure_media", True)
-        self.force_reply_keywords = self.config.get(
-            "force_reply_keywords", ["有人知道", "怎么解决", "求助", "请问", "怎么办"]
-        )
-        self.force_reply_mode = normalize_force_reply_mode(
-            self.config.get("force_reply_mode", "进入 TypeSafe 判断")
-        )
-        self.ignore_keywords = self.config.get(
-            "ignore_keywords", ["机器人别说话", "不用机器人回答"]
-        )
-        self.force_trigger_regex = self.config.get("force_trigger_regex", "")
-        self.ignore_regex = self.config.get("ignore_regex", "")
-        self.force_trigger_regex_pattern = None
-        if self.force_trigger_regex and self.force_trigger_regex.strip():
-            try:
-                self.force_trigger_regex_pattern = re.compile(
-                    self.force_trigger_regex.strip(), re.IGNORECASE
-                )
-            except re.error as e:
-                logger.warning(f"[TypeSafe] 强制触发正则编译失败: {e}")
-
-        self.ignore_regex_pattern = None
-        if self.ignore_regex and self.ignore_regex.strip():
-            try:
-                self.ignore_regex_pattern = re.compile(
-                    self.ignore_regex.strip(), re.IGNORECASE
-                )
-            except re.error as e:
-                logger.warning(f"[TypeSafe] 忽略正则表达式编译失败: {e}")
 
         # 9. API 限流、缓存与调试
         self.rate_limit_per_minute = self.config.get("rate_limit_per_minute", 60)
@@ -587,19 +552,7 @@ class TypeSafeAutoReplyPlugin(Star):
                 logger.debug(f"[TypeSafe] [规则过滤] 消息长度不在有效区间 ({len_reason})")
             return
 
-        # 8. 忽略关键词与忽略正则检查（优先使用预编译 Pattern）
-        if self.filter.matches_keywords(text, self.ignore_keywords):
-            logger.info("[TypeSafe] [规则过滤] 命中忽略关键词，保持静默")
-            return
-        if self.ignore_regex_pattern:
-            if self.filter.matches_regex(text, self.ignore_regex_pattern):
-                logger.info("[TypeSafe] [规则过滤] 命中忽略正则表达式，保持静默")
-                return
-        elif self.ignore_regex and self.filter.matches_regex(text, self.ignore_regex):
-            logger.info("[TypeSafe] [规则过滤] 命中忽略正则表达式，保持静默")
-            return
-
-        # 9. 冷却检查与连续回复限制
+        # 8. 冷却检查与连续回复限制
         is_cooling, cd_reason = self.cooldown_tracker.is_cooling_down(
             session_id=session_id,
             user_id=sender_id,
@@ -621,49 +574,7 @@ class TypeSafeAutoReplyPlugin(Star):
             )
             return
 
-        # 12. 强制触发关键词与正则检查
-        force_reply = self.filter.matches_keywords(
-            text, self.force_reply_keywords
-        ) or (
-            self.filter.matches_regex(text, self.force_trigger_regex_pattern)
-            if self.force_trigger_regex_pattern
-            else (
-                self.filter.matches_regex(text, self.force_trigger_regex)
-                if self.force_trigger_regex
-                else False
-            )
-        )
-
-        if force_reply and self.force_reply_mode == "direct_reply":
-            logger.info("[TypeSafe] [关键词直通] 命中强制回复关键词/正则，直接生成回复")
-            recent_msgs = self.context_manager.get_recent_messages(
-                session_id,
-                count=self.context_message_count,
-                ignore_bots=self.ignore_bots,
-                ignore_commands=self.ignore_commands,
-            )
-            chat_context = self.context_manager.format_context_string(recent_msgs)
-
-            reply_text = await self.reply_engine.generate_reply(
-                event=event,
-                current_message=text,
-                chat_context=chat_context,
-                model_mode=self.model_mode,
-                custom_provider_id=self.custom_provider_id,
-                reply_style=self.reply_style,
-                reply_length_mode=self.reply_length_mode,
-                max_chars=self.max_chars,
-                custom_prompt=self.custom_prompt,
-                image_urls=image_urls if image_urls else None,
-            )
-            if reply_text:
-                await self._apply_reply_delay()
-                self.cooldown_tracker.record_reply_sent(session_id, sender_id)
-                event.stop_event()
-                yield event.plain_result(reply_text)
-            return
-
-        # 13. 获取最近聊天上下文并组装 TypeSafe State
+        # 9. 获取最近聊天上下文并组装 TypeSafe State
         recent_records = self.context_manager.get_recent_messages(
             session_id=session_id,
             count=self.context_message_count,
@@ -684,7 +595,7 @@ class TypeSafeAutoReplyPlugin(Star):
             current_sender_name=sender_name,
         )
 
-        # 13.5 固定问答表模式：完全接管回复来源
+        # 10. 固定问答表模式：完全接管回复来源
         # 开启后不再走 TypeSafe「是否需要回复」的两阶段流程，改为 QA 表命中驱动。
         if self.use_qa_table:
             logger.debug(
@@ -702,7 +613,7 @@ class TypeSafeAutoReplyPlugin(Star):
                 yield _
             return
 
-        # 14. TypeSafe AI 结构化判断
+        # 11. TypeSafe AI 结构化判断
         logger.info(
             f"[TypeSafe] [2/4 调用TypeSafe] 正在调用 TypeSafe AI (模型: {self.typesafe_model}) 分析消息意图与是否需要回复: \"{display_msg}\""
         )
@@ -719,14 +630,14 @@ class TypeSafeAutoReplyPlugin(Star):
             f"紧急度: {decision.urgency}, 判定理由: \"{decision.reason}\""
         )
 
-        # 15. should_reply 是否为 True？
+        # 12. should_reply 是否为 True？
         if not decision.should_reply:
             logger.info(
                 f"[TypeSafe] [4/4 决策保持静默] TypeSafe 判定无需主动回复: {decision.reason}"
             )
             return
 
-        # 16. 类型是否在允许列表中？
+        # 13. 类型是否在允许列表中？
         is_type_allowed = MessageClassifier.is_reply_type_allowed(
             decision.reply_type, self.allowed_reply_types
         )
@@ -739,7 +650,7 @@ class TypeSafeAutoReplyPlugin(Star):
             )
             return
 
-        # 17. 置信度是否达标？
+        # 14. 置信度是否达标？
         if not MessageClassifier.is_confidence_sufficient(
             decision.confidence_level, self.min_confidence
         ):
@@ -748,12 +659,12 @@ class TypeSafeAutoReplyPlugin(Star):
             )
             return
 
-        # 18. 回复概率检查
+        # 15. 回复概率检查
         if not check_probability(self.reply_probability):
             logger.info(f"[TypeSafe] [4/4 决策保持静默] 回复概率未命中 (设定为 {self.reply_probability}%)")
             return
 
-        # 19. 调用 AstrBot LLM 生成回复
+        # 16. 调用 AstrBot LLM 生成回复
         logger.info(
             f"[TypeSafe] [4/4 触发主动回复] 综合判定通过，正在调用 LLM Provider ({self.custom_provider_id or '当前会话模型'}) 生成自然回复..."
         )
@@ -780,7 +691,7 @@ class TypeSafeAutoReplyPlugin(Star):
             logger.warning("[TypeSafe] LLM 未能生成有效回复内容")
             return
 
-        # 20. 执行延时、发送回复并记录冷却、阻止事件向后传播
+        # 17. 执行延时、发送回复并记录冷却、阻止事件向后传播
         await self._apply_reply_delay()
         self.cooldown_tracker.record_reply_sent(session_id, sender_id)
         event.stop_event()
@@ -1369,9 +1280,8 @@ class TypeSafeAutoReplyPlugin(Star):
             else 0,
             "debug_log": bool(self.debug_log),
             "active_sessions": active,
-            "force_reply_mode": self.force_reply_mode,
-            "force_trigger_regex": self.force_trigger_regex,
-            "ignore_regex": self.ignore_regex,
+            "min_message_length": self.min_message_length,
+            "max_message_length": self.max_message_length,
             "qa_mode": self.qa_mode,
             "qa_mode_label": MODE_LABELS.get(self.qa_mode, self.qa_mode),
             "use_qa_table": bool(self.use_qa_table),
@@ -1379,12 +1289,6 @@ class TypeSafeAutoReplyPlugin(Star):
             "qa_min_confidence": self.qa_min_confidence,
             "qa_fallback_to_llm": bool(self.qa_fallback_to_llm),
             "qa_summary": self.qa_store.scope_summary(),
-            "regex_ok": {
-                "force_trigger": bool(self.force_trigger_regex_pattern)
-                or not (self.force_trigger_regex or "").strip(),
-                "ignore": bool(self.ignore_regex_pattern)
-                or not (self.ignore_regex or "").strip(),
-            },
         }
 
     async def _api_try(self):

@@ -106,16 +106,11 @@
     },
     {
       id: 'filters',
-      title: '消息过滤与触发',
-      desc: '在调用 TypeSafe 之前的本地规则层，命中即短路，零 API 消耗。',
+      title: '消息卫生过滤',
+      desc: '调用 Jev 之前的长度检查，命中即短路、零 API 消耗。关键词与正则过滤已移除：问答表本身就是白名单式召回，未命中即静默，无需再维护第二套规则。',
       fields: [
         { key: 'min_message_length', type: 'int', label: '最短检测长度', desc: '短于该长度的消息不参与判定。', min: 0, max: 100 },
-        { key: 'max_message_length', type: 'int', label: '最长检测长度', desc: '长于该长度的消息不参与判定。', min: 10, max: 20000 },
-        { key: 'force_reply_mode', type: 'select', label: '强制关键词触发模式', options: ['进入 TypeSafe 判断', '直接回复'], desc: '命中强制触发关键词/正则后的行为。' },
-        { key: 'force_reply_keywords', type: 'list', label: '强制触发关键词', desc: '每行一个关键词，命中后按上面的模式处理。' },
-        { key: 'ignore_keywords', type: 'list', label: '忽略关键词', desc: '每行一个关键词，命中后保持静默。' },
-        { key: 'force_trigger_regex', type: 'text', label: '强制触发正则', desc: '留空表示不启用。正则写错时插件会打印警告并忽略该规则。', mono: true },
-        { key: 'ignore_regex', type: 'text', label: '忽略正则', desc: '留空表示不启用。', mono: true },
+        { key: 'max_message_length', type: 'int', label: '最长检测长度', desc: '长于该长度的消息不参与判定。', min: 10, max: 20000 }
       ]
     },
     {

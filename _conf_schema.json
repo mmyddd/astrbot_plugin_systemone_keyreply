@@ -330,49 +330,6 @@
     "hint": "忽略不包含有效对话文本的纯图片、纯表情或媒体消息",
     "default": true
   },
-  "force_reply_keywords": {
-    "description": "强制触发关键词",
-    "type": "list",
-    "hint": "包含这些关键词的消息强制进入判断或回复",
-    "default": [
-      "有人知道",
-      "怎么解决",
-      "求助",
-      "请问",
-      "怎么办"
-    ]
-  },
-  "force_reply_mode": {
-    "description": "强制关键词触发模式",
-    "type": "string",
-    "hint": "进入 TypeSafe 判断还是直接回复",
-    "options": [
-      "进入 TypeSafe 判断",
-      "直接回复"
-    ],
-    "default": "进入 TypeSafe 判断"
-  },
-  "ignore_keywords": {
-    "description": "忽略关键词",
-    "type": "list",
-    "hint": "包含这些关键词的消息直接跳过",
-    "default": [
-      "机器人别说话",
-      "不用机器人回答"
-    ]
-  },
-  "force_trigger_regex": {
-    "description": "强制触发正则",
-    "type": "string",
-    "hint": "匹配正则表达式的消息强制触发",
-    "default": ""
-  },
-  "ignore_regex": {
-    "description": "忽略正则",
-    "type": "string",
-    "hint": "匹配正则表达式的消息直接跳过",
-    "default": ""
-  },
   "rate_limit_per_minute": {
     "description": "TypeSafe 每分钟最大请求数",
     "type": "int",

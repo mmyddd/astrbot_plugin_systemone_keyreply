@@ -364,13 +364,6 @@ def normalize_filter_mode(val: Any) -> str:
     return "blacklist_only"
 
 
-def normalize_force_reply_mode(val: Any) -> str:
-    """归一化强制关键词模式"""
-    s = str(val or "").strip().lower()
-    if "直接" in s or "direct_reply" in s:
-        return "direct_reply"
-    return "pass_to_typesafe"
-
 
 def normalize_reply_delay_mode(val: Any) -> str:
     """归一化回复延时模式"""

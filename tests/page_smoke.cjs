@@ -201,12 +201,13 @@ t('多选控件 collect 返回数组', () => {
   if (!Array.isArray(patch.allowed_reply_types)) throw new Error('不是数组: ' + typeof patch.allowed_reply_types);
 });
 t('列表控件 collect 按行拆分', () => {
-  TS.state.dirty.clear(); TS.state.dirty.add('ignore_keywords');
-  const el2 = document.querySelector('[data-field="ignore_keywords"]');
-  if (!el2) throw new Error('找不到 ignore_keywords 控件');
+  // 用一个仍然存在的列表字段作为样本（关键词过滤字段已随「消息过滤与触发」移除）
+  TS.state.dirty.clear(); TS.state.dirty.add('session_blacklist');
+  const el2 = document.querySelector('[data-field="session_blacklist"]');
+  if (!el2) throw new Error('找不到 session_blacklist 控件');
   el2.value = 'a\nb\nc';
   const patch = TS.config.collect();
-  if (JSON.stringify(patch.ignore_keywords) !== JSON.stringify(['a','b','c'])) throw new Error(JSON.stringify(patch.ignore_keywords));
+  if (JSON.stringify(patch.session_blacklist) !== JSON.stringify(['a','b','c'])) throw new Error(JSON.stringify(patch.session_blacklist));
 });
 t('fillDefaults() 不抛错', () => TS.config.fillDefaults());
 t('renderStatus 空态 / 有数据', () => { TS.state.status = null; TS.views.renderStatus();

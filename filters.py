@@ -125,29 +125,4 @@ class MessageFilter:
             return False
         return any(stripped.startswith(p) for p in cls.COMMAND_PREFIXES)
 
-    @staticmethod
-    def matches_keywords(text: str, keywords: List[str]) -> bool:
-        """检查文本是否包含关键词列表中的任一词"""
-        if not text or not keywords:
-            return False
-        for kw in keywords:
-            if kw and kw in text:
-                return True
-        return False
-
-    @staticmethod
-    def matches_regex(text: str, pattern: Union[str, re.Pattern]) -> bool:
-        """检查文本是否匹配指定的正则表达式（支持预编译 Pattern 或字符串）"""
-        if not text or not pattern:
-            return False
-        try:
-            if isinstance(pattern, re.Pattern):
-                return bool(pattern.search(text))
-            p_str = str(pattern).strip()
-            if not p_str:
-                return False
-            return bool(re.search(p_str, text, re.IGNORECASE))
-        except re.error:
-            return False
-
 
