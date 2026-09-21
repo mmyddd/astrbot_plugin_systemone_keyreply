@@ -235,8 +235,8 @@ pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
   - 回复风格与长度定制、模拟真人延时、`/typesafe_status` 与 `/typesafe_test` 指令。
 
 > [!NOTE]
-> 上述两个项目的原版权声明均保留在 [LICENSE](LICENSE) 中：
-> `Copyright (c) 2026 baibaibai`。
+> 本项目是上述两个项目的衍生作品，三者的版权声明均保留在 [LICENSE](LICENSE) 中：
+> `Copyright (c) 2026 mmyddd`
 
 ---
 

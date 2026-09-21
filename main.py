@@ -203,7 +203,7 @@ PLUGIN_VERSION = "1.0.0"
 
 @register(
     "astrbot_plugin_typesafe_keyreply",
-    "AstrBot & TypeSafe Community",
+    "mmyddd",
     "固定问答表驱动的自动回复插件。消息先经本地正则召回，命中后由 TypeSafe AI 判定是否真提问，再回复标准答案。",
     PLUGIN_VERSION,
     "https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply",
