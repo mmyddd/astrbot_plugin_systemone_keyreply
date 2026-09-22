@@ -43,6 +43,7 @@ try:
         normalize_reply_style,
         normalize_reply_length_mode,
         normalize_filter_mode,
+        normalize_typesafe_base_url,
         normalize_typesafe_model,
     )
 except (ImportError, ValueError):
@@ -73,6 +74,7 @@ except (ImportError, ValueError):
         normalize_reply_style,
         normalize_reply_length_mode,
         normalize_filter_mode,
+        normalize_typesafe_base_url,
         normalize_typesafe_model,
     )
 
@@ -99,6 +101,7 @@ _EDITABLE_LIST_FIELDS = (
 _EDITABLE_TEXT_FIELDS = (
     "qa_min_confidence",
     "typesafe_api_key",
+    "typesafe_base_url",
     "typesafe_model",
     "typesafe_custom_model",
     "failure_mode",
@@ -197,13 +200,13 @@ def _mask_secret(value: object) -> str:
 
 
 # 插件版本：@register 与状态 API 共用同一来源，避免两处不一致
-PLUGIN_VERSION = "1.0.0"
+PLUGIN_VERSION = "1.0.2"
 
 
 @register(
     "astrbot_plugin_typesafe_keyreply",
     "mmyddd",
-    "固定问答表驱动的自动回复插件。消息先经本地正则召回，命中后由 TypeSafe AI 判定是否真提问，再回复标准答案。",
+    "固定问答表驱动的自动关键词回复插件。消息先经本地正则召回，命中后由 TypeSafe AI 判定是否真提问，再回复标准答案。",
     PLUGIN_VERSION,
     "https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply",
 )
@@ -220,6 +223,10 @@ class TypeSafeAutoReplyPlugin(Star):
 
         # 2. TypeSafe AI 配置 (支持中英文双语选项自动归一化与模型选择)
         self.typesafe_api_key = self.config.get("typesafe_api_key", "")
+        # Base URL 只填根地址，SDK 会自动拼接 /v1/systemone
+        self.typesafe_base_url = normalize_typesafe_base_url(
+            self.config.get("typesafe_base_url", "")
+        )
         self.typesafe_timeout = self.config.get("typesafe_timeout", 10)
         self.typesafe_model_raw = self.config.get(
             "typesafe_model", "jev-latest (推荐最新旗舰)"
@@ -298,6 +305,7 @@ class TypeSafeAutoReplyPlugin(Star):
         # 初始化子模块
         self.typesafe_client = TypeSafeClientWrapper(
             api_key=self.typesafe_api_key,
+            base_url=self.typesafe_base_url,
             timeout=self.typesafe_timeout,
             rate_limit_per_minute=self.rate_limit_per_minute,
             enable_cache=self.enable_cache,
@@ -326,6 +334,7 @@ class TypeSafeAutoReplyPlugin(Star):
         logger.info(
             f"[TypeSafe] 插件已加载. 启用状态: {self.enable_plugin}, "
             f"API配置: {self.typesafe_client.is_configured()}, 模型: {self.typesafe_model}, "
+            f"API地址: {self.typesafe_client.effective_base_url}, "
             f"群聊: {self.enable_group}, 私聊: {self.enable_private}"
         )
 
@@ -705,6 +714,7 @@ class TypeSafeAutoReplyPlugin(Star):
             f"插件总开关: {'开启' if self.enable_plugin else '关闭'}\n"
             f"TypeSafe API 状态: {api_health}\n"
             f"TypeSafe 判定模型: {self.typesafe_model}\n"
+            f"TypeSafe API 地址: {self.typesafe_client.effective_base_url}\n"
             f"群聊自动回复: {'开启' if self.enable_group else '关闭'}\n"
             f"私聊自动回复: {'开启' if self.enable_private else '关闭'}\n"
             f"回复来源: 固定问答表（{MODE_LABELS.get(self.qa_mode, self.qa_mode)}）\n"
@@ -1044,6 +1054,9 @@ class TypeSafeAutoReplyPlugin(Star):
             "model_raw": self.typesafe_model_raw,
             "custom_model": self.typesafe_custom_model,
             "timeout": self.typesafe_client.timeout,
+            "base_url": self.typesafe_base_url,
+            "base_url_effective": self.typesafe_client.effective_base_url,
+            "base_url_supported": bool(self.typesafe_client.base_url_supported),
             "failure_mode": self.failure_mode,
             "reply_style": self.reply_style,
             "reply_length_mode": self.reply_length_mode,

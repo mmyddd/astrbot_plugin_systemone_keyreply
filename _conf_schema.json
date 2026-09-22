@@ -23,6 +23,12 @@
     "hint": "TypeSafe 控制台获取的 API 密钥 (ts_...)",
     "default": ""
   },
+  "typesafe_base_url": {
+    "description": "TypeSafe API Base URL",
+    "type": "string",
+    "hint": "接口根地址。插件会自动在其后拼接 /v1/systemone 后缀，因此这里只需填到域名（或自建反代根路径），例如 https://api.typesafe.ai；留空使用官方地址。误填完整接口地址或漏写 https:// 都会被自动纠正",
+    "default": ""
+  },
   "typesafe_timeout": {
     "description": "TypeSafe API 超时时间 (秒)",
     "type": "int",

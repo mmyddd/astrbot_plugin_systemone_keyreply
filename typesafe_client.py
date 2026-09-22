@@ -18,9 +18,23 @@ if plugin_dir not in sys.path:
     sys.path.insert(0, plugin_dir)
 
 try:
-    from .utils import SlidingWindowRateLimiter, SimpleTTLCache, normalize_failure_mode, normalize_typesafe_model
+    from .utils import (
+        DEFAULT_TYPESAFE_BASE_URL,
+        SlidingWindowRateLimiter,
+        SimpleTTLCache,
+        normalize_failure_mode,
+        normalize_typesafe_base_url,
+        normalize_typesafe_model,
+    )
 except (ImportError, ValueError):
-    from utils import SlidingWindowRateLimiter, SimpleTTLCache, normalize_failure_mode, normalize_typesafe_model
+    from utils import (
+        DEFAULT_TYPESAFE_BASE_URL,
+        SlidingWindowRateLimiter,
+        SimpleTTLCache,
+        normalize_failure_mode,
+        normalize_typesafe_base_url,
+        normalize_typesafe_model,
+    )
 
 
 
@@ -36,11 +50,15 @@ class TypeSafeClientWrapper:
         cache_ttl: int = 60,
         failure_mode: str = "silent",
         model: str = "jev-latest",
+        base_url: str = "",
     ):
         self.api_key = api_key.strip() if api_key else ""
         self.timeout = float(timeout) if timeout and timeout > 0 else 10.0
         self.failure_mode = normalize_failure_mode(failure_mode)  # silent, rule_based, pass_to_astrbot
         self.model = normalize_typesafe_model(model)
+        # 只保存根地址：SDK 会在其后自动拼接 /v1/systemone
+        self.base_url = normalize_typesafe_base_url(base_url)
+        self.base_url_supported = True
         self.rate_limiter = SlidingWindowRateLimiter(rate_limit_per_minute)
         self.enable_cache = enable_cache
         self.cache = SimpleTTLCache(ttl_seconds=cache_ttl) if enable_cache else None
@@ -49,13 +67,34 @@ class TypeSafeClientWrapper:
         self._init_client()
 
     def _init_client(self):
-        if self.api_key:
+        """按当前配置创建 SDK 客户端。
+
+        base_url 留空时不传该参数，完全沿用 SDK 默认地址（含 TYPESAFE_BASE_URL
+        环境变量）；传值时只给根地址，SDK 会在其后自动拼接 /v1/systemone。
+        """
+        if not self.api_key:
+            self._client = None
+            return
+
+        kwargs: Dict[str, Any] = {"api_key": self.api_key, "timeout": self.timeout}
+        if self.base_url:
+            kwargs["base_url"] = self.base_url
+
+        try:
+            self._client = AsyncTypeSafeClient(**kwargs)
+            self.base_url_supported = True
+        except TypeError as e:
+            # 旧版 typesafe-sdk 不认识 base_url 关键字参数
+            if "base_url" not in kwargs:
+                raise
+            self.base_url_supported = False
+            logger.warning(
+                f"[TypeSafe] 当前 typesafe-sdk 不支持自定义 Base URL，已回退官方地址: {e}"
+            )
             self._client = AsyncTypeSafeClient(
                 api_key=self.api_key,
                 timeout=self.timeout,
             )
-        else:
-            self._client = None
 
     def update_config(
         self,
@@ -66,14 +105,17 @@ class TypeSafeClientWrapper:
         cache_ttl: int,
         failure_mode: str,
         model: str = "jev-latest",
+        base_url: str = "",
     ):
         """配置动态热重载"""
         old_key = self.api_key
         old_timeout = self.timeout
+        old_base_url = self.base_url
         self.api_key = api_key.strip() if api_key else ""
         self.timeout = float(timeout) if timeout and timeout > 0 else 10.0
         self.failure_mode = normalize_failure_mode(failure_mode)
         self.model = normalize_typesafe_model(model)
+        self.base_url = normalize_typesafe_base_url(base_url)
 
         if self.rate_limiter.limit_per_minute != rate_limit_per_minute:
             self.rate_limiter = SlidingWindowRateLimiter(rate_limit_per_minute)
@@ -85,8 +127,19 @@ class TypeSafeClientWrapper:
         else:
             self.cache = None
 
-        if old_key != self.api_key or old_timeout != self.timeout:
+        if (
+            old_key != self.api_key
+            or old_timeout != self.timeout
+            or old_base_url != self.base_url
+        ):
             self._init_client()
+
+    @property
+    def effective_base_url(self) -> str:
+        """实际生效的 API 根地址（自定义未被 SDK 支持时回退官方默认值）。"""
+        if self.base_url and self.base_url_supported:
+            return self.base_url
+        return DEFAULT_TYPESAFE_BASE_URL
 
     def is_configured(self) -> bool:
         return bool(self.api_key and self._client)
@@ -201,6 +254,17 @@ class TypeSafeClientWrapper:
                 ),
                 timeout=7.0,
             )
-            return {"ok": True, "message": f"API 连接正常 (模型: {self.model})", "data": resp}
+            return {
+                "ok": True,
+                "message": (
+                    f"API 连接正常 (模型: {self.model}, 地址: {self.effective_base_url})"
+                ),
+                "base_url": self.effective_base_url,
+                "data": resp,
+            }
         except Exception as e:
-            return {"ok": False, "message": f"连接失败: {str(e)}"}
+            return {
+                "ok": False,
+                "message": f"连接失败 ({self.effective_base_url}): {str(e)}",
+                "base_url": self.effective_base_url,
+            }

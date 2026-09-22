@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(tempfile.gettempdir()) / "ts_img"
 shutil.rmtree(ROOT, ignore_errors=True); ROOT.mkdir(parents=True)
 os.environ["STUB_DATA"] = str(ROOT)
+import _stubs  # noqa: F401  注入 astrbot / typesafe_sdk / quart 桩
 import quart
 import main as M
 from qa_store import SCOPE_GROUP

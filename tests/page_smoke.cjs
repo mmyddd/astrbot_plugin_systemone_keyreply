@@ -221,7 +221,8 @@ t('renderStatus 空态 / 有数据', () => { TS.state.status = null; TS.views.re
     delay: { enabled: true, mode: 'random', min: 1, max: 3, fixed: 2 }, session_cooldown: 30, user_cooldown: 30,
     max_continuous_replies: 2, filter_mode: 'blacklist_only', context_message_count: 3, cache_enabled: false,
     cache_ttl: 60, cache_size: 0, debug_log: false, regex_ok: { force_trigger: true, ignore: true },
-    force_trigger_regex: '', ignore_regex: '' };
+    force_trigger_regex: '', ignore_regex: '',
+    base_url: '', base_url_effective: 'https://api.typesafe.ai', base_url_supported: true };
   TS.views.renderStatus(); });
 t('renderTryResult 三种分支', () => {
   TS.state.tryResult = null; TS.views.renderTryResult();
@@ -261,6 +262,8 @@ const qaFixture = () => ({
 });
 
 const walkAll = root => { const out = []; const w = n => { for (const c of n.children) { out.push(c); w(c); } }; w(root); return out; };
+// 状态页的 <dd> 用 innerHTML 赋值，DOM 桩里 textContent 不含它，因此单独收集
+const dsOf = root => walkAll(root).filter(n => n.tagName === 'DD');
 // 精确类名匹配：避免 'qa-group-card' 误匹配 'qa-group-card-head'
 const hasClass = (n, cls) => String(n.className || '').split(/\s+/).indexOf(cls) >= 0;
 
@@ -377,6 +380,41 @@ t('qa 空表渲染占位', () => {
   TS.state.qaTableKey = 'group:333';
   TS.qa.loadDraft();
   if (!hosts['#qa-rows'].children.length) throw new Error('空表未渲染占位');
+});
+
+t('renderStatus 展示 API 地址默认分支', () => {
+  TS.views.renderStatus();
+  const dl = dsOf(hosts['#status-body']);
+  const hit = dl.find(n => String(n.innerHTML).indexOf('https://api.typesafe.ai') >= 0);
+  if (!hit) throw new Error('未展示 API 地址');
+  if (String(hit.innerHTML).indexOf('/v1/systemone') < 0) {
+    throw new Error('未说明 SDK 会自动追加 /v1/systemone');
+  }
+});
+
+t('renderStatus 展示自定义 Base URL 与后缀说明', () => {
+  TS.state.status = Object.assign({}, TS.state.status, {
+    base_url: 'https://gw.example.com/ts',
+    base_url_effective: 'https://gw.example.com/ts',
+    base_url_supported: true
+  });
+  TS.views.renderStatus();
+  const hit = dsOf(hosts['#status-body'])
+    .find(n => String(n.innerHTML).indexOf('https://gw.example.com/ts') >= 0);
+  if (!hit) throw new Error('未展示自定义 Base URL');
+  if (String(hit.innerHTML).indexOf('/v1/systemone') < 0) {
+    throw new Error('未说明自动追加 /v1/systemone');
+  }
+});
+
+t('renderStatus 对旧版 SDK 回退给出提示', () => {
+  TS.state.status = Object.assign({}, TS.state.status, {
+    base_url: 'https://gw.example.com/ts', base_url_supported: false
+  });
+  TS.views.renderStatus();
+  const all = walkAll(hosts['#status-body'])
+    .map(n => String(n.innerHTML) + String(n.textContent)).join(' ');
+  if (all.indexOf('不支持自定义') < 0) throw new Error('回退未给出提示');
 });
 
 console.log('脚本加载错误: ' + (errors.length ? errors.join(' | ') : '(无)'));

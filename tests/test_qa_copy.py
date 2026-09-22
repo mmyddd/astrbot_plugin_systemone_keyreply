@@ -26,6 +26,7 @@ yaml.safe_dump({"triggers": {
     "{'text': '带图的', 'images': []}": {"text": "看图", "images": ["http://x/1.png"]},
 }}, open(KR, "w", encoding="utf-8"), allow_unicode=True)
 
+import _stubs  # noqa: F401  注入 astrbot / typesafe_sdk / quart 桩
 import quart
 import main as M
 from qa_store import SCOPE_GLOBAL

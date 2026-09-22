@@ -3,6 +3,8 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
+import _stubs  # noqa: F401  注入 astrbot / typesafe_sdk 依赖桩
+
 from filters import MessageFilter
 from utils import (
     CooldownTracker,

@@ -17,6 +17,7 @@ REPO = Path(__file__).resolve().parent.parent
 SCHEMA = REPO / "_conf_schema.json"
 CONFIG_JS = REPO / "pages" / "typesafe-console" / "js" / "config.js"
 MAIN_PY = REPO / "main.py"
+METADATA = REPO / "metadata.yaml"
 
 results = []
 
@@ -64,6 +65,23 @@ def main():
     filters_py = files["filters.py"]
     for helper in ("matches_keywords", "matches_regex"):
         check(f"filters.py 已移除 {helper}", helper not in filters_py)
+
+    # 插件简介与版本号：metadata.yaml 是市场展示的唯一来源，main.py 的 @register
+    # 必须与它完全同步，否则市场页与实际行为会各说各话。
+    meta = METADATA.read_text(encoding="utf-8")
+    desc = (
+        "固定问答表驱动的自动关键词回复插件。消息先经本地正则召回，"
+        "命中后由 TypeSafe AI 判定是否真提问，再回复标准答案。"
+    )
+    check("metadata 简介与约定一致", ("desc: " + desc) in meta,
+          meta.strip().splitlines()[1] if "\n" in meta else meta)
+    check("main.py 注册简介与 metadata 一致", desc in main_py)
+    meta_version = re.search(r"^version:\s*v?([\d.]+)", meta, re.M)
+    code_version = re.search(r'PLUGIN_VERSION = "([\d.]+)"', main_py)
+    check("插件版本号两处一致",
+          bool(meta_version) and bool(code_version)
+          and meta_version.group(1) == code_version.group(1),
+          (meta_version and meta_version.group(1), code_version and code_version.group(1)))
 
     print("")
     for name, ok, extra in results:

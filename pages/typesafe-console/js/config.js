@@ -30,9 +30,10 @@
     {
       id: 'typesafe',
       title: 'TypeSafe 判定',
-      desc: '决策层：由 TypeSafe AI 判定消息是否值得主动回复、属于哪种意图。',
+      desc: '决策层：正则召回命中后，由 TypeSafe AI 判定这条消息是否真的在问这件事。',
       fields: [
         { key: 'typesafe_api_key', type: 'secret', label: 'TypeSafe API Key', desc: '在 console.typesafe.ai 获取。已保存的密钥以掩码显示，保持掩码即为不修改。', hint: 'ts_...' },
+        { key: 'typesafe_base_url', type: 'text', label: 'TypeSafe API Base URL', desc: '接口根地址，插件会自动在其后追加 /v1/systemone 后缀，因此只填到域名即可（如 https://api.typesafe.ai），不要带上 /v1/systemone；留空使用官方地址。漏写 https:// 或误带后缀都会被自动纠正。', hint: 'https://api.typesafe.ai', wide: true },
         { key: 'typesafe_model', type: 'select', label: 'TypeSafe 判定模型', options: ['jev-latest (推荐最新旗舰)', 'jev', '自定义模型'], desc: '用于结构化裁决的模型。' },
         { key: 'typesafe_custom_model', type: 'text', label: 'TypeSafe 自定义模型名称', desc: '当判定模型选择「自定义模型」时生效。', hint: '例如 jev-1.13.0', dependsOn: { key: 'typesafe_model', value: '自定义模型' } },
         { key: 'typesafe_timeout', type: 'int', label: 'TypeSafe API 超时时间 (秒)', desc: '单次裁决请求的超时时间，超时按失败处理策略降级。', min: 1, max: 120 },

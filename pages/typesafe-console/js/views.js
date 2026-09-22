@@ -62,6 +62,13 @@
       pill('私聊 ' + (s.enable_private ? '开' : '关'), s.enable_private ? 'ok' : 'mute')
     ].join(' '));
     add('判定模型', esc(s.model || '—') + (s.custom_model ? ' <span class="field-meta">(自定义)</span>' : ''));
+    // Base URL：只填根地址，/v1/systemone 由插件自动追加
+    const baseNote = !s.base_url
+      ? ' <span class="field-meta">官方默认地址，自动追加 /v1/systemone</span>'
+      : (s.base_url_supported === false
+        ? ' ' + pill('当前 typesafe-sdk 不支持自定义地址，已回退官方', 'bad')
+        : ' <span class="field-meta">自定义根地址，自动追加 /v1/systemone</span>');
+    add('API 地址', esc(s.base_url_effective || s.base_url || '—') + baseNote);
     add('失败处理策略', pill(FAILURE_LABEL[s.failure_mode] || s.failure_mode || '—', s.failure_mode === 'silent' ? 'mute' : 'brand'));
     add('回复来源', pill(s.qa_mode_label || '固定问答表', 'brand')
       + (s.qa_mode === 'jev'

@@ -20,6 +20,7 @@ import yaml
 yaml.safe_dump({"triggers": {"{'text': '怎么装%', 'images': []}": {"text": "答案", "images": []}}},
                open(KR / "triggers.yml", "w", encoding="utf-8"), allow_unicode=True)
 
+import _stubs  # noqa: F401  注入 astrbot / typesafe_sdk / quart 桩
 import quart
 import main as M
 

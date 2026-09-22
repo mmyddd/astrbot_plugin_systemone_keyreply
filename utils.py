@@ -386,3 +386,40 @@ def normalize_typesafe_model(selected: Any, custom: str = "") -> str:
     if "自定" in s:
         return c if c else "jev-latest"
     return str(selected).strip() if str(selected).strip() else "jev-latest"
+
+# TypeSafe 官方地址：base_url 留空时走的默认值
+DEFAULT_TYPESAFE_BASE_URL = "https://api.typesafe.ai"
+
+# SDK 会自动拼接在 base_url 之后的接口路径（typesafe-sdk endpoints 定义）
+_TYPESAFE_PATH_SUFFIXES = ("/v1/systemone", "/v1/models", "/v1")
+
+
+def normalize_typesafe_base_url(val: Any) -> str:
+    """归一化 TypeSafe API Base URL。
+
+    TypeSafe SDK 会在 base_url 之后【自动拼接】接口路径（/v1/systemone），
+    所以这里统一把输入收敛成「根地址」：
+
+    - 去掉首尾空白；粘贴时带了说明文字（如 https://x  # 备用）只取第一段；
+    - 去掉结尾斜杠；
+    - 缺少协议头时补 https://（直接填 api.typesafe.ai 也能用）；
+    - 误填了完整接口地址时剥掉 /v1/systemone、/v1/models、/v1 后缀。
+
+    返回空串表示不覆盖，沿用 SDK 自己的默认地址（或 TYPESAFE_BASE_URL 环境变量）。
+    """
+    text = str(val or "").strip()
+    if not text:
+        return ""
+    text = text.split()[0].rstrip("/")
+    if not text:
+        return ""
+    if not text.lower().startswith(("http://", "https://")):
+        text = "https://" + text
+    while True:
+        lowered = text.lower()
+        for suffix in _TYPESAFE_PATH_SUFFIXES:
+            if lowered.endswith(suffix):
+                text = text[: -len(suffix)].rstrip("/")
+                break
+        else:
+            return text
