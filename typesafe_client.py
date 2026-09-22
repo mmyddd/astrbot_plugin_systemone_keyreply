@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from typing import Optional, Dict, Any
 
 from typesafe_sdk import (
@@ -12,6 +11,7 @@ from typesafe_sdk import (
 
 import sys
 from pathlib import Path
+from astrbot.api import logger
 
 plugin_dir = str(Path(__file__).parent.resolve())
 if plugin_dir not in sys.path:
@@ -22,7 +22,6 @@ try:
 except (ImportError, ValueError):
     from utils import SlidingWindowRateLimiter, SimpleTTLCache, normalize_failure_mode, normalize_typesafe_model
 
-logger = logging.getLogger("astrbot")
 
 
 class TypeSafeClientWrapper:

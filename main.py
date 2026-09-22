@@ -1,4 +1,3 @@
-import logging
 import sys
 import time
 import asyncio
@@ -13,6 +12,7 @@ if plugin_dir not in sys.path:
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot.api import AstrBotConfig
+from astrbot.api import logger
 from astrbot.api.message_components import Plain, Image
 
 try:
@@ -76,7 +76,6 @@ except (ImportError, ValueError):
         normalize_typesafe_model,
     )
 
-logger = logging.getLogger("astrbot")
 
 
 CQ_IMAGE_REGEX = re.compile(r"\[CQ:image,[^\]]*?(?:url|file)=([^,\]]+)", re.IGNORECASE)

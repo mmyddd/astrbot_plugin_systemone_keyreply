@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import Dict, Any, List, Optional
-import logging
 
 from typesafe_sdk import Choice
 import sys
@@ -17,7 +16,6 @@ except (ImportError, ValueError):
     from typesafe_client import TypeSafeClientWrapper
     from utils import normalize_failure_mode, normalize_confidence_level
 
-logger = logging.getLogger("astrbot")
 
 # 回复类型名称映射，供日志和格式化展示
 REPLY_TYPE_NAMES = {

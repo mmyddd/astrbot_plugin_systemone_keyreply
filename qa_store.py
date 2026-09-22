@@ -12,13 +12,12 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+from astrbot.api import logger
 
-logger = logging.getLogger("astrbot")
 
 # 作用域类型
 SCOPE_GLOBAL = "global"

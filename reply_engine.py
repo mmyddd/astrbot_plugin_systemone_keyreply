@@ -1,8 +1,8 @@
-import logging
 from typing import Optional
 
 from astrbot.api.star import Context
 from astrbot.api.event import AstrMessageEvent
+from astrbot.api import logger
 
 import sys
 from pathlib import Path
@@ -24,7 +24,6 @@ except (ImportError, ValueError):
         normalize_reply_length_mode,
     )
 
-logger = logging.getLogger("astrbot")
 
 STYLE_DESCRIPTIONS = {
     "natural": "像普通群成员一样自然交流，语言生活化，不使用机械、套话或过于正式的公文语气。",
