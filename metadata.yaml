@@ -1,6 +1,6 @@
 name: astrbot_plugin_typesafe_keyreply
 desc: 固定问答表驱动的自动回复插件。消息先经本地正则召回，命中后由 TypeSafe AI 判定是否真提问，再回复标准答案。
 help: https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply
-version: v1.0.0
+version: v1.0.1
 author: mmyddd
-repo: https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply
+repo: https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply  
