@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
-"""TypeSafe API Base URL 配置测试。
+"""SystemOne API Base URL 配置测试。
 
 覆盖：
-- normalize_typesafe_base_url 的归一化规则（补协议头 / 去尾斜杠 / 剥离误填的接口路径）
+- normalize_systemone_base_url 的归一化规则（补协议头 / 去尾斜杠 / 剥离误填的接口路径）
 - 包装器只把【根地址】交给 SDK，/v1/systemone 由 SDK 自行拼接
 - 旧版 typesafe-sdk 不认识 base_url 时回退官方地址并告警
 - update_config 切换地址会重建客户端
 - main.py 接线：配置 → 插件实例 → 客户端 → 状态 API
 - schema / 页面 / 可编辑白名单三处同步，且提示文案写明了自动追加后缀
 
-运行： python tests/test_typesafe_base_url.py
+运行： python tests/test_systemone_base_url.py
 """
 import _stubs  # noqa: F401  注入 astrbot / typesafe_sdk / quart 桩
 
@@ -21,8 +21,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import typesafe_client as TC
-from utils import DEFAULT_TYPESAFE_BASE_URL, normalize_typesafe_base_url
+import systemone_client as TC
+from utils import DEFAULT_API_BASE_URL, normalize_systemone_base_url
 
 REPO = Path(__file__).resolve().parent.parent
 SYSTEM_ONE_PATH = "/v1/systemone"
@@ -51,7 +51,7 @@ class FakeSDK:
         self.api_key = api_key
         self.timeout = timeout
         self.passed_base_url = base_url
-        self.base_url = base_url or DEFAULT_TYPESAFE_BASE_URL
+        self.base_url = base_url or DEFAULT_API_BASE_URL
         self.last_request_url = None
         self.calls = 0
 
@@ -70,7 +70,7 @@ class OldSDK:
             raise TypeError(
                 "__init__() got an unexpected keyword argument 'base_url'"
             )
-        self.base_url = DEFAULT_TYPESAFE_BASE_URL
+        self.base_url = DEFAULT_API_BASE_URL
         self.api_key = api_key
         self.timeout = timeout
 
@@ -82,37 +82,37 @@ _ORIGINAL_SDK = TC.AsyncTypeSafeClient
 
 
 def make_wrapper(**overrides):
-    kwargs = {"api_key": "ts_key_1234567890", "timeout": 5}
+    kwargs = {"api_key": "sk_key_1234567890", "timeout": 5}
     kwargs.update(overrides)
-    return TC.TypeSafeClientWrapper(**kwargs)
+    return TC.SystemOneClientWrapper(**kwargs)
 
 
 async def run():
     # ── 1. 归一化规则 ────────────────────────────────────────────
-    check("空值表示不覆盖", normalize_typesafe_base_url("") == "")
-    check("纯空白视为空", normalize_typesafe_base_url("   ") == "")
-    check("None 视为空", normalize_typesafe_base_url(None) == "")
+    check("空值表示不覆盖", normalize_systemone_base_url("") == "")
+    check("纯空白视为空", normalize_systemone_base_url("   ") == "")
+    check("None 视为空", normalize_systemone_base_url(None) == "")
     official = "https://api.typesafe.ai"
-    check("官方地址原样保留", normalize_typesafe_base_url(official) == official)
-    check("去掉结尾斜杠", normalize_typesafe_base_url(official + "/") == official)
+    check("官方地址原样保留", normalize_systemone_base_url(official) == official)
+    check("去掉结尾斜杠", normalize_systemone_base_url(official + "/") == official)
     check("剥离 /v1/systemone",
-          normalize_typesafe_base_url(official + "/v1/systemone") == official)
+          normalize_systemone_base_url(official + "/v1/systemone") == official)
     check("剥离带斜杠的 /v1/systemone",
-          normalize_typesafe_base_url(official + "/v1/systemone/") == official)
-    check("剥离 /v1/models", normalize_typesafe_base_url(official + "/v1/models") == official)
-    check("剥离裸 /v1", normalize_typesafe_base_url(official + "/v1") == official)
+          normalize_systemone_base_url(official + "/v1/systemone/") == official)
+    check("剥离 /v1/models", normalize_systemone_base_url(official + "/v1/models") == official)
+    check("剥离裸 /v1", normalize_systemone_base_url(official + "/v1") == official)
     check("缺少协议头自动补 https",
-          normalize_typesafe_base_url("api.typesafe.ai") == official)
+          normalize_systemone_base_url("api.typesafe.ai") == official)
     check("保留 http 协议",
-          normalize_typesafe_base_url("http://localhost:8080") == "http://localhost:8080")
+          normalize_systemone_base_url("http://localhost:8080") == "http://localhost:8080")
     check("保留反代前缀",
-          normalize_typesafe_base_url("https://gw.example.com/ts/")
+          normalize_systemone_base_url("https://gw.example.com/ts/")
           == "https://gw.example.com/ts")
     check("粘贴时带了说明文字只取第一段",
-          normalize_typesafe_base_url("https://gw.example.com/ts  # 备用")
+          normalize_systemone_base_url("https://gw.example.com/ts  # 备用")
           == "https://gw.example.com/ts")
     check("反代路径 + 误填后缀一并纠正",
-          normalize_typesafe_base_url("https://gw.example.com/ts/v1/systemone")
+          normalize_systemone_base_url("https://gw.example.com/ts/v1/systemone")
           == "https://gw.example.com/ts")
 
     # ── 2. 只把根地址交给 SDK，路径由 SDK 拼接 ──────────────────
@@ -158,7 +158,7 @@ async def run():
     hot = make_wrapper(base_url=gateway)
     first_client = hot._client
     hot.update_config(
-        api_key="ts_key_1234567890", timeout=5, rate_limit_per_minute=60,
+        api_key="sk_key_1234567890", timeout=5, rate_limit_per_minute=60,
         enable_cache=False, cache_ttl=60, failure_mode="silent",
         model="jev-latest", base_url="https://other.example.com",
     )
@@ -175,24 +175,29 @@ async def run():
     import main as M
 
     ctx = type("C", (), {"register_web_api": lambda *a, **k: None})()
-    cfg = {"typesafe_api_key": "ts_key_1234567890",
-           "typesafe_base_url": "https://gw.example.com/ts/v1/systemone/"}
-    plugin = M.TypeSafeAutoReplyPlugin(ctx, cfg)
-    check("插件实例归一化了 base_url", plugin.typesafe_base_url == gateway,
-          plugin.typesafe_base_url)
+    cfg = {"systemone_api_key": "sk_key_1234567890",
+           "systemone_base_url": "https://gw.example.com/ts/v1/systemone/"}
+    plugin = M.SystemOneKeyReplyPlugin(ctx, cfg)
+    check("插件实例归一化了 base_url", plugin.systemone_base_url == gateway,
+          plugin.systemone_base_url)
     check("插件把 base_url 透传给了客户端",
-          plugin.typesafe_client._client.passed_base_url == gateway,
-          plugin.typesafe_client._client.passed_base_url)
+          plugin.systemone_client._client.passed_base_url == gateway,
+          plugin.systemone_client._client.passed_base_url)
 
     status = await plugin._api_status()
     check("状态接口暴露 base_url", status.get("base_url") == gateway, status.get("base_url"))
     check("状态接口暴露生效地址", status.get("base_url_effective") == gateway)
     check("状态接口暴露支持标记", status.get("base_url_supported") is True)
-    check("状态接口版本与 metadata 一致", status.get("version") == "1.0.2",
+    # 版本号只从 metadata.yaml 读，避免每次发版都要改测试
+    meta_ver = re.search(
+        r"^version:\s*v?([\d.]+)",
+        (REPO / "metadata.yaml").read_text(encoding="utf-8"), re.M)
+    check("状态接口版本与 metadata 一致",
+          status.get("version") == (meta_ver.group(1) if meta_ver else None),
           status.get("version"))
 
     # 留空时状态接口应显示官方默认地址
-    plugin2 = M.TypeSafeAutoReplyPlugin(ctx, {"typesafe_api_key": "ts_key_1234567890"})
+    plugin2 = M.SystemOneKeyReplyPlugin(ctx, {"systemone_api_key": "sk_key_1234567890"})
     status2 = await plugin2._api_status()
     check("未配置时 base_url 为空串", status2.get("base_url") == "", status2.get("base_url"))
     check("未配置时生效地址为官方默认", status2.get("base_url_effective") == official,
@@ -200,20 +205,20 @@ async def run():
 
     # ── 6. 配置三处同步 + 文案注明自动追加后缀 ──────────────────
     schema = json.loads((REPO / "_conf_schema.json").read_text(encoding="utf-8"))
-    cfg_js = (REPO / "pages" / "typesafe-console" / "js" / "config.js").read_text(encoding="utf-8")
+    cfg_js = (REPO / "pages" / "systemone-console" / "js" / "config.js").read_text(encoding="utf-8")
     main_py = (REPO / "main.py").read_text(encoding="utf-8")
     meta = (REPO / "metadata.yaml").read_text(encoding="utf-8")
 
-    item = schema.get("typesafe_base_url") or {}
-    check("schema 存在 typesafe_base_url", bool(item))
+    item = schema.get("systemone_base_url") or {}
+    check("schema 存在 systemone_base_url", bool(item))
     check("schema 默认值为空串", item.get("default") == "")
     check("schema 提示写明自动追加 /v1/systemone",
           "/v1/systemone" in str(item.get("hint", "")), item.get("hint"))
-    check("页面有对应控件", "key: 'typesafe_base_url'" in cfg_js)
-    page_field = re.search(r"key: 'typesafe_base_url'.*?\}", cfg_js)
+    check("页面有对应控件", "key: 'systemone_base_url'" in cfg_js)
+    page_field = re.search(r"key: 'systemone_base_url'.*?\}", cfg_js)
     check("页面描述写明自动追加 /v1/systemone",
           bool(page_field) and "/v1/systemone" in page_field.group(0))
-    check("字段在可编辑白名单内", '"typesafe_base_url"' in main_py)
+    check("字段在可编辑白名单内", '"systemone_base_url"' in main_py)
 
 
 TC.AsyncTypeSafeClient = _ORIGINAL_SDK

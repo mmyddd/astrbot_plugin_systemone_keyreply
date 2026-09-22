@@ -20,11 +20,11 @@ from utils import (
     normalize_reply_length_mode,
     normalize_filter_mode,
     normalize_reply_delay_mode,
-    normalize_typesafe_model,
+    normalize_systemone_model,
 )
 from context_manager import ContextManager
 from classifier import MessageClassifier, ClassificationDecision
-from typesafe_client import TypeSafeClientWrapper
+from systemone_client import SystemOneClientWrapper
 
 
 class TestFilters(unittest.TestCase):
@@ -225,10 +225,10 @@ class TestCooldownAndUtils(unittest.TestCase):
         self.assertEqual(normalize_filter_mode("仅黑名单"), "blacklist_only")
         self.assertEqual(normalize_reply_delay_mode("固定延时"), "fixed")
 
-        # TypeSafe model normalization
-        self.assertEqual(normalize_typesafe_model("jev-latest (推荐最新旗舰)"), "jev-latest")
-        self.assertEqual(normalize_typesafe_model("jev"), "jev")
-        self.assertEqual(normalize_typesafe_model("自定义模型", "custom-jev-v2"), "custom-jev-v2")
+        # SystemOne model normalization
+        self.assertEqual(normalize_systemone_model("jev-latest (推荐最新旗舰)"), "jev-latest")
+        self.assertEqual(normalize_systemone_model("jev"), "jev")
+        self.assertEqual(normalize_systemone_model("自定义模型", "custom-jev-v2"), "custom-jev-v2")
 
         # At-bot mode normalization
 
@@ -309,7 +309,7 @@ class TestReplyEngine(unittest.IsolatedAsyncioTestCase):
 class TestClassifier(unittest.IsolatedAsyncioTestCase):
     async def test_failure_modes(self):
         # Test silent failure mode
-        wrapper = TypeSafeClientWrapper(api_key="", failure_mode="静默，不回复")
+        wrapper = SystemOneClientWrapper(api_key="", failure_mode="静默，不回复")
         classifier = MessageClassifier(wrapper)
         state = {"current_message": {"text": "Docker 怎么装？"}}
 
@@ -351,7 +351,7 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
     """
 
     async def asyncSetUp(self):
-        from main import TypeSafeAutoReplyPlugin
+        from main import SystemOneKeyReplyPlugin
         from qa_store import SCOPE_GLOBAL
 
         self.context = MagicMock()
@@ -364,8 +364,8 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
             "enable_plugin": True,
             "enable_group": True,
             "enable_private": False,
-            "typesafe_api_key": "ts_test_key",
-            "typesafe_model": "jev-latest (推荐最新旗舰)",
+            "systemone_api_key": "sk_test_key",
+            "systemone_model": "jev-latest (推荐最新旗舰)",
             "qa_min_confidence": "中",
             "session_cooldown": 10,
             "user_cooldown": 10,
@@ -373,7 +373,7 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
             "enable_reply_delay": False,
             "debug_log": True,
         }
-        self.plugin = TypeSafeAutoReplyPlugin(self.context, self.config)
+        self.plugin = SystemOneKeyReplyPlugin(self.context, self.config)
         # 用固定的全局问答表，避免读到磁盘数据
         self.plugin.qa_store.tables = {}
         self.plugin.qa_store.replace_table(SCOPE_GLOBAL, "", [
@@ -485,16 +485,16 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(results), 0)
 
     async def test_status_command(self):
-        event = self._make_mock_event("/typesafe_status")
-        results = [r async for r in self.plugin.command_typesafe_status(event)]
+        event = self._make_mock_event("/systemone_status")
+        results = [r async for r in self.plugin.command_systemone_status(event)]
         self.assertEqual(len(results), 1)
-        self.assertIn("TypeSafe 智能自动回复插件状态", results[0]["text"])
+        self.assertIn("SystemOne 智能自动回复插件状态", results[0]["text"])
         self.assertIn("固定问答表", results[0]["text"])
 
     async def test_test_command_no_recall(self):
         """试判指令：未召回时直接说明不会调用 Jev。"""
-        event = self._make_mock_event("/typesafe_test 今天天气不错")
-        results = [r async for r in self.plugin.command_typesafe_test(event, message="今天天气不错")]
+        event = self._make_mock_event("/systemone_test 今天天气不错")
+        results = [r async for r in self.plugin.command_systemone_test(event, message="今天天气不错")]
         self.assertTrue(any("未命中任何 Q" in r["text"] for r in results))
 
     async def test_test_command_with_recall(self):
@@ -502,8 +502,8 @@ class TestPluginE2E(unittest.IsolatedAsyncioTestCase):
         self.plugin.classifier.match_relevance = AsyncMock(
             return_value=self._topic(True, question="金锭%")
         )
-        event = self._make_mock_event("/typesafe_test 金锭怎么做")
-        results = [r async for r in self.plugin.command_typesafe_test(event, message="金锭怎么做")]
+        event = self._make_mock_event("/systemone_test 金锭怎么做")
+        results = [r async for r in self.plugin.command_systemone_test(event, message="金锭怎么做")]
         joined = chr(10).join(r["text"] for r in results)
         self.assertIn("正则召回命中", joined)
         self.assertIn("真提问", joined)

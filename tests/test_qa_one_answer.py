@@ -23,8 +23,8 @@ ANSWER = "在本整合包中，金矿石无法在主世界生成。"
 HINT = "该回答适合用户询问金锭怎么做的语境"
 
 async def run():
-    p = M.TypeSafeAutoReplyPlugin(type("C", (), {"register_web_api": lambda *a, **k: None})(),
-                                  {"enable_jev_topic": True, "typesafe_api_key": "ts_k_1234567890"})
+    p = M.SystemOneKeyReplyPlugin(type("C", (), {"register_web_api": lambda *a, **k: None})(),
+                                  {"enable_jev_topic": True, "systemone_api_key": "sk_k_1234567890"})
 
     # 页面 collectDraft 的产物形态：同答案的多条 Q，各带同一份 hint
     quart._Req._payload = {"scope": "global", "scope_id": "", "entries": [

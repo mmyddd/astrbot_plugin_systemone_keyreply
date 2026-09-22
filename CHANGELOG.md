@@ -1,7 +1,38 @@
 # 更新日志 (CHANGELOG)
 
-本插件为 **astrbot_plugin_typesafe_keyreply**，在 KeyReply 与 TypeSafe 智能自动回复两个项目基础上重构而来，
+本插件为 **astrbot_plugin_systemone_keyreply**（v1.0.3 起由 `astrbot_plugin_typesafe_keyreply` 改名而来），在 KeyReply 与 TypeSafe 智能自动回复两个项目基础上重构而来，
 详见 [README 的致谢与来源声明](README.md#致谢与来源声明)。以下记录从本插件自身 1.0.0 起的变更。
+
+## [1.0.3] - 2026-09-23
+
+### 改名
+
+- 插件名 `astrbot_plugin_typesafe_keyreply` → **`astrbot_plugin_systemone_keyreply`**：仓库地址、
+  数据目录、Web API 路由与热重载所用的插件名同步更新，插件名收敛为 `main.py` 里的单一常量 `PLUGIN_NAME`。
+  > 术语说明：**SystemOne 是 TypeSafe 提出的大模型规范**（接口路径 `/v1/systemone`，模型 Jev System One），
+  > 不是品牌；厂商、SDK、控制台与官方域名仍写作 TypeSafe。
+- 插件显示名改为「SystemOne 智能自动回复」，配置中心页面 id `typesafe-console` → `systemone-console`。
+- 配置键 `typesafe_api_key` / `typesafe_base_url` / `typesafe_timeout` / `typesafe_model` /
+  `typesafe_custom_model` → `systemone_*`；`_conf_schema.json` 与配置中心里的文案同步改为 SystemOne。
+- 指令 `/typesafe_status`、`/typesafe_test` → **`/systemone_status`**、**`/systemone_test`**。
+- 类与模块：`TypeSafeAutoReplyPlugin` → `SystemOneKeyReplyPlugin`、
+  `TypeSafeClientWrapper` → `SystemOneClientWrapper`、`typesafe_client.py` → `systemone_client.py`，
+  日志前缀 `[TypeSafe]` → `[SystemOne]`。
+- API Key 示例由 `ts_...` 改为 `sk_...`。
+
+### 升级兼容
+
+- **老配置自动迁移**：启动时若发现旧键（`typesafe_*`）而对应新键为空，会就地搬迁并保存配置，
+  老用户升级后无需重填；旧键保留不删，新键已有值时以新键为准。
+- **旧数据目录自动迁移**：启动时若 `data/plugin_data/astrbot_plugin_typesafe_keyreply/` 存在
+  而新目录还没有问答表，会自动复制过去（只补缺、不覆盖），旧文件保留。
+- 指令名**不保留旧别名**：升级后请改用 `/systemone_status` 与 `/systemone_test`。
+
+### 测试
+
+- 新增改名迁移测试 `tests/test_migration.py`：覆盖配置键迁移、新旧键优先级、数据目录迁移、
+  已有数据不被覆盖与全新安装路径。
+- 原有测试、页面冒烟与配置三方一致性测试已全部跟随新命名更新。
 
 ## [1.0.2] - 2026-09-22
 

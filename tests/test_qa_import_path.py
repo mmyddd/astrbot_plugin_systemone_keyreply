@@ -27,9 +27,9 @@ import main as M
 results = []
 def check(n, c, extra=""): results.append((n, bool(c), str(extra)[:130]))
 
-cfg = {"reply_source": "固定问答表 (KeyReply)", "typesafe_api_key": "ts_k_1234567890"}
+cfg = {"reply_source": "固定问答表 (KeyReply)", "systemone_api_key": "sk_k_1234567890"}
 ctx = type("C", (), {"register_web_api": lambda *a, **k: None})()
-p = M.TypeSafeAutoReplyPlugin(ctx, cfg)
+p = M.SystemOneKeyReplyPlugin(ctx, cfg)
 
 async def run():
     # 1. 插件不再持有该属性
@@ -48,14 +48,14 @@ async def run():
 
     # 4. 不传路径时自动探测（一键按钮的用法，cwd 已在 data 父目录）
     os.chdir(ROOT)
-    p2 = M.TypeSafeAutoReplyPlugin(ctx, cfg)
+    p2 = M.SystemOneKeyReplyPlugin(ctx, cfg)
     quart._Req._payload = {"scope": "global", "scope_id": "", "replace": True}
     res2 = await p2._api_qa_import()
     if isinstance(res2, tuple): res2 = res2[0]
     check("不传路径时自动探测成功", res2.get("ok") is True, res2.get("message"))
 
     # 5. 配置里残留的旧键不应导致崩溃
-    p3 = M.TypeSafeAutoReplyPlugin(ctx, dict(cfg, qa_import_path="/some/old/path.yml"))
+    p3 = M.SystemOneKeyReplyPlugin(ctx, dict(cfg, qa_import_path="/some/old/path.yml"))
     check("旧配置残留键不影响启动", p3 is not None)
 
 asyncio.run(run())

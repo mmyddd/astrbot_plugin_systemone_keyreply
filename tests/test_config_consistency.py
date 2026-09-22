@@ -15,7 +15,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 SCHEMA = REPO / "_conf_schema.json"
-CONFIG_JS = REPO / "pages" / "typesafe-console" / "js" / "config.js"
+CONFIG_JS = REPO / "pages" / "systemone-console" / "js" / "config.js"
 MAIN_PY = REPO / "main.py"
 METADATA = REPO / "metadata.yaml"
 
@@ -71,7 +71,7 @@ def main():
     meta = METADATA.read_text(encoding="utf-8")
     desc = (
         "固定问答表驱动的自动关键词回复插件。消息先经本地正则召回，"
-        "命中后由 TypeSafe AI 判定是否真提问，再回复标准答案。"
+        "命中后由 TypeSafe AI 的 SystemOne 判定是否真提问，再回复标准答案。"
     )
     check("metadata 简介与约定一致", ("desc: " + desc) in meta,
           meta.strip().splitlines()[1] if "\n" in meta else meta)

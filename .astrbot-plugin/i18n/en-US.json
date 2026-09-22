@@ -1,10 +1,10 @@
 {
   "metadata": {
-    "display_name": "TypeSafe Auto Reply"
+    "display_name": "SystemOne Auto Reply"
   },
   "pages": {
-    "typesafe-console": {
-      "title": "TypeSafe Console",
+    "systemone-console": {
+      "title": "SystemOne Console",
       "desc": "Edit decision and reply policies, inspect runtime status, and try message intent live."
     }
   }

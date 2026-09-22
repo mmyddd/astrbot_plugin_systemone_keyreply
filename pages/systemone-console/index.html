@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" id="theme-color" content="#f5f6fa">
-<title>TypeSafe · 配置中心</title>
+<title>SystemOne · 配置中心</title>
 <style id="boot-style">
   html, body { margin: 0; background: #f5f6fa; color: #0f1520; }
   html[data-theme="dark"], html[data-theme="dark"] body { background: #090c12; color: #e8edf6; }
@@ -26,7 +26,7 @@
           </svg>
         </span>
         <span class="brand-text">
-          <strong>TypeSafe</strong>
+          <strong>SystemOne</strong>
           <em id="brand-version">配置中心</em>
         </span>
       </a>
@@ -96,7 +96,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
             <circle cx="12" cy="12" r="9"></circle><path d="M12 8.2v5.2M12 16.4h.01"></path>
           </svg>
-          <span>首次使用请在「TypeSafe 判定」中填写 <strong>API Key</strong>，然后在「运行状态」页点一次连通性测试确认可用。其余 47 项均有可用默认值，可以先跑起来再逐项微调。</span>
+          <span>首次使用请在「SystemOne 判定」中填写 <strong>API Key</strong>，然后在「运行状态」页点一次连通性测试确认可用。其余 47 项均有可用默认值，可以先跑起来再逐项微调。</span>
         </div>
 
         <div id="config-sections" class="view-loading">
@@ -222,7 +222,7 @@
       <section data-view-panel="status" hidden>
         <div class="page-head">
           <h1>运行状态</h1>
-          <p>当前生效的判定与回复策略，等价于群里的 <code>/typesafe_status</code> 指令，但更完整且可一键测试连通性。</p>
+          <p>当前生效的判定与回复策略，等价于群里的 <code>/systemone_status</code> 指令，但更完整且可一键测试连通性。</p>
         </div>
 
         <div class="card">
@@ -232,7 +232,7 @@
               <p>修改配置后这里会同步刷新</p>
             </div>
             <div class="card-head-right">
-              <button class="btn btn-ghost btn-sm" type="button" id="probe-btn">测试 TypeSafe 连通性</button>
+              <button class="btn btn-ghost btn-sm" type="button" id="probe-btn">测试 SystemOne 连通性</button>
             </div>
           </div>
           <div class="card-body">
@@ -251,7 +251,7 @@
       <section data-view-panel="try" hidden>
         <div class="page-head">
           <h1>在线试判</h1>
-          <p>输入一段消息，用当前的 API Key、模型与允许类型配置真实调用一次 TypeSafe，查看它会怎么判。不会触发任何真实回复。</p>
+          <p>输入一段消息，用当前的 API Key、模型与允许类型配置真实调用一次 SystemOne，查看它会怎么判。不会触发任何真实回复。</p>
         </div>
 
         <div class="try-layout">
@@ -268,7 +268,7 @@
                   <label class="field-label" for="try-input">待判定的消息</label>
                   <span class="field-hint">例如「怎么安装 Docker？」</span>
                 </div>
-                <textarea class="textarea" id="try-input" rows="3" placeholder="输入一条群聊消息，试试 TypeSafe 会怎么判"></textarea>
+                <textarea class="textarea" id="try-input" rows="3" placeholder="输入一条群聊消息，试试 SystemOne 会怎么判"></textarea>
               </div>
 
               <div style="margin-top:16px">

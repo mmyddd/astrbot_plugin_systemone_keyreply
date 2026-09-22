@@ -35,9 +35,9 @@ results = []
 def check(n, c, extra=""): results.append((n, bool(c), str(extra)[:130]))
 
 cfg = {"reply_source": "固定问答表 (KeyReply)", "enable_jev_topic": True,
-       "typesafe_api_key": "ts_key_1234567890"}
+       "systemone_api_key": "sk_key_1234567890"}
 ctx = type("C", (), {"register_web_api": lambda *a, **k: None})()
-p = M.TypeSafeAutoReplyPlugin(ctx, cfg)
+p = M.SystemOneKeyReplyPlugin(ctx, cfg)
 p.qa_store.path = ROOT / "plugin_data" / "qa_tables.json"
 p.qa_store.data_dir = p.qa_store.path.parent
 p.qa_store.tables = {}

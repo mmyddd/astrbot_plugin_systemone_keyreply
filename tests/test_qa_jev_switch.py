@@ -37,8 +37,8 @@ class E:
 EV = E()
 
 def build(entries):
-    p = M.TypeSafeAutoReplyPlugin(type("C", (), {"register_web_api": lambda *a, **k: None})(),
-                                  {"typesafe_api_key": "ts_k_1234567890", "enable_reply_delay": False})
+    p = M.SystemOneKeyReplyPlugin(type("C", (), {"register_web_api": lambda *a, **k: None})(),
+                                  {"systemone_api_key": "sk_k_1234567890", "enable_reply_delay": False})
     p.qa_store.tables = {}
     p.qa_store.replace_table(SCOPE_GLOBAL, "", entries)
     return p

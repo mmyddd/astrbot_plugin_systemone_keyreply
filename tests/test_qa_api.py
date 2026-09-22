@@ -21,9 +21,9 @@ results = []
 def check(n, c, extra=""): results.append((n, bool(c), str(extra)[:120]))
 
 cfg = {"enable_jev_topic": True,
-       "typesafe_api_key": "ts_key_1234567890", "qa_min_confidence": "中"}
+       "systemone_api_key": "sk_key_1234567890", "qa_min_confidence": "中"}
 ctx = type("C", (), {"register_web_api": lambda *a, **k: None})()
-p = M.TypeSafeAutoReplyPlugin(ctx, cfg)
+p = M.SystemOneKeyReplyPlugin(ctx, cfg)
 
 async def run():
     # 1. 页面初次加载：list 应给出全局表与摘要

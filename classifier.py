@@ -10,10 +10,10 @@ if plugin_dir not in sys.path:
     sys.path.insert(0, plugin_dir)
 
 try:
-    from .typesafe_client import TypeSafeClientWrapper
+    from .systemone_client import SystemOneClientWrapper
     from .utils import normalize_failure_mode, normalize_confidence_level
 except (ImportError, ValueError):
-    from typesafe_client import TypeSafeClientWrapper
+    from systemone_client import SystemOneClientWrapper
     from utils import normalize_failure_mode, normalize_confidence_level
 
 
@@ -76,7 +76,7 @@ class TopicMatch:
 class MessageClassifier:
     """负责将消息转换为 TypeSafe System One 提示，并解析结构化裁决结果"""
 
-    def __init__(self, client_wrapper: TypeSafeClientWrapper):
+    def __init__(self, client_wrapper: SystemOneClientWrapper):
         self.client_wrapper = client_wrapper
         self._questions = self.build_system_one_questions()
 
@@ -135,7 +135,7 @@ class MessageClassifier:
         state: dict,
         cache_key_text: Optional[str] = None,
     ) -> ClassificationDecision:
-        """调用 TypeSafe 并解析得出最终裁决对象"""
+        """调用 SystemOne 并解析得出最终裁决对象"""
         questions = self._questions
 
         api_result = await self.client_wrapper.call_system_one(
@@ -158,7 +158,7 @@ class MessageClassifier:
                     reply_type="other",
                     confidence_level="medium",
                     confidence_score=0.6,
-                    reason=f"TypeSafe API 故障降级(直通 AstrBot): {error_reason}",
+                    reason=f"SystemOne API 故障降级(直通 AstrBot): {error_reason}",
                     urgency="normal",
                     is_fallback=True,
                 )
@@ -173,7 +173,7 @@ class MessageClassifier:
                     reply_type="explicit_question" if has_question_mark else "casual_chat",
                     confidence_level="low",
                     confidence_score=0.5,
-                    reason=f"TypeSafe API 故障降级(基础规则判断): {error_reason}",
+                    reason=f"SystemOne API 故障降级(基础规则判断): {error_reason}",
                     urgency="normal",
                     is_fallback=True,
                 )
@@ -184,12 +184,12 @@ class MessageClassifier:
                     reply_type="other",
                     confidence_level="low",
                     confidence_score=0.0,
-                    reason=f"TypeSafe API 故障静默降级: {error_reason}",
+                    reason=f"SystemOne API 故障静默降级: {error_reason}",
                     urgency="low",
                     is_fallback=True,
                 )
 
-        # 成功拿到 SystemOneResponse
+        # 成功拿到 SDK 裁决结果
         raw_choices = api_result.get("raw_choices", {})
 
         # 解析 should_reply
@@ -219,7 +219,7 @@ class MessageClassifier:
         confidence_level = self.map_confidence_level(confidence_score)
 
         reason = (
-            f"TypeSafe判断: should_reply={should_reply_val}, "
+            f"SystemOne判断: should_reply={should_reply_val}, "
             f"type={reply_type_val}, confidence={confidence_level}({confidence_score:.2f})"
         )
 

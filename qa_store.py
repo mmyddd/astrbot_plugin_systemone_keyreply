@@ -51,7 +51,7 @@ def compile_question_pattern(text: str) -> Optional[re.Pattern]:
     try:
         return re.compile(pattern, re.IGNORECASE)
     except re.error as e:
-        logger.warning(f"[TypeSafe][QA] 问题模式编译失败 ({raw}): {e}")
+        logger.warning(f"[SystemOne][QA] 问题模式编译失败 ({raw}): {e}")
         return None
 
 
@@ -305,7 +305,7 @@ class QAStore:
         try:
             self.data_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            logger.warning(f"[TypeSafe][QA] 创建数据目录失败 {self.data_dir}: {e}")
+            logger.warning(f"[SystemOne][QA] 创建数据目录失败 {self.data_dir}: {e}")
 
     def load(self) -> None:
         """从磁盘加载；文件不存在或损坏时退回空表集。"""
@@ -318,7 +318,7 @@ class QAStore:
             with open(self.path, "r", encoding="utf-8") as fh:
                 payload = json.load(fh)
         except Exception as e:
-            logger.error(f"[TypeSafe][QA] 读取 {self.path} 失败，将以空表启动: {e}")
+            logger.error(f"[SystemOne][QA] 读取 {self.path} 失败，将以空表启动: {e}")
             self._seed_examples()
             return
 
@@ -377,7 +377,7 @@ class QAStore:
             tmp.replace(self.path)
             return True
         except Exception as e:
-            logger.error(f"[TypeSafe][QA] 保存 {self.path} 失败: {e}")
+            logger.error(f"[SystemOne][QA] 保存 {self.path} 失败: {e}")
             return False
 
     # ── 查询 ──────────────────────────────────────────────

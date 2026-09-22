@@ -42,11 +42,11 @@ class FakeEvent:
 EV = FakeEvent()
 
 cfg = {"reply_source": "固定问答表 (KeyReply)", "enable_reply_delay": False,
-       "typesafe_api_key": "ts_key_1234567890", "enable_reply_delay": False}
+       "systemone_api_key": "sk_key_1234567890", "enable_reply_delay": False}
 ctx = type("C", (), {"register_web_api": lambda *a, **k: None,
                      "llm_calls": [],
                      "get_current_chat_provider_id": lambda *a, **k: None})()
-p = M.TypeSafeAutoReplyPlugin(ctx, cfg)
+p = M.SystemOneKeyReplyPlugin(ctx, cfg)
 
 async def run():
     # 造两条同图片答案的 Q（会被归组进答案池）
@@ -80,7 +80,7 @@ async def run():
 
     # 3. Jev 模式：纯图片答案直接发图，不调用 LLM 编造文字
     from classifier import TopicMatch
-    p2 = M.TypeSafeAutoReplyPlugin(type("C", (), {"register_web_api": lambda *a, **k: None,
+    p2 = M.SystemOneKeyReplyPlugin(type("C", (), {"register_web_api": lambda *a, **k: None,
         "llm_calls": [],
         "get_current_provider_id": lambda *a, **k: None})(), cfg)
     p2.qa_store.path = ROOT / "qa2.json"; p2.qa_store.tables = {}
@@ -95,8 +95,8 @@ async def run():
         return TopicMatch(matched=True, question="原神", index=0, confidence_score=0.95,
                           confidence_level="high", reason="stub")
     p2.classifier.match_topic = fake_topic
-    p2.classifier.client_wrapper.api_key = "ts_x_123456789"
-    p2.typesafe_client.api_key = "ts_x_123456789"
+    p2.classifier.client_wrapper.api_key = "sk_x_123456789"
+    p2.systemone_client.api_key = "sk_x_123456789"
 
     cands2 = p2.qa_store.recall_candidates("原神", "group", "111")
     out2 = []
@@ -117,7 +117,7 @@ async def run():
     check("命中测试报告 would_reply", t.get("would_reply") is True, t.get("would_reply"))
 
     # 5. 空答案（文本与图片都空）仍应静默
-    p3 = M.TypeSafeAutoReplyPlugin(type("C", (), {"register_web_api": lambda *a, **k: None})(), cfg)
+    p3 = M.SystemOneKeyReplyPlugin(type("C", (), {"register_web_api": lambda *a, **k: None})(), cfg)
     p3.qa_store.path = ROOT / "qa3.json"; p3.qa_store.tables = {}
     p3.qa_store.replace_table(SCOPE_GROUP, "111", [
         {"question": "空答案", "answer": {"text": "", "images": []}, "enabled": True}])

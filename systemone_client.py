@@ -19,27 +19,27 @@ if plugin_dir not in sys.path:
 
 try:
     from .utils import (
-        DEFAULT_TYPESAFE_BASE_URL,
+        DEFAULT_API_BASE_URL,
         SlidingWindowRateLimiter,
         SimpleTTLCache,
         normalize_failure_mode,
-        normalize_typesafe_base_url,
-        normalize_typesafe_model,
+        normalize_systemone_base_url,
+        normalize_systemone_model,
     )
 except (ImportError, ValueError):
     from utils import (
-        DEFAULT_TYPESAFE_BASE_URL,
+        DEFAULT_API_BASE_URL,
         SlidingWindowRateLimiter,
         SimpleTTLCache,
         normalize_failure_mode,
-        normalize_typesafe_base_url,
-        normalize_typesafe_model,
+        normalize_systemone_base_url,
+        normalize_systemone_model,
     )
 
 
 
-class TypeSafeClientWrapper:
-    """封装与 TypeSafe API 的异步交互、超时控制、限流与异常容错"""
+class SystemOneClientWrapper:
+    """封装与 SystemOne API 的异步交互、超时控制、限流与异常容错"""
 
     def __init__(
         self,
@@ -55,9 +55,9 @@ class TypeSafeClientWrapper:
         self.api_key = api_key.strip() if api_key else ""
         self.timeout = float(timeout) if timeout and timeout > 0 else 10.0
         self.failure_mode = normalize_failure_mode(failure_mode)  # silent, rule_based, pass_to_astrbot
-        self.model = normalize_typesafe_model(model)
+        self.model = normalize_systemone_model(model)
         # 只保存根地址：SDK 会在其后自动拼接 /v1/systemone
-        self.base_url = normalize_typesafe_base_url(base_url)
+        self.base_url = normalize_systemone_base_url(base_url)
         self.base_url_supported = True
         self.rate_limiter = SlidingWindowRateLimiter(rate_limit_per_minute)
         self.enable_cache = enable_cache
@@ -89,7 +89,7 @@ class TypeSafeClientWrapper:
                 raise
             self.base_url_supported = False
             logger.warning(
-                f"[TypeSafe] 当前 typesafe-sdk 不支持自定义 Base URL，已回退官方地址: {e}"
+                f"[SystemOne] 当前 typesafe-sdk 不支持自定义 Base URL，已回退官方地址: {e}"
             )
             self._client = AsyncTypeSafeClient(
                 api_key=self.api_key,
@@ -114,8 +114,8 @@ class TypeSafeClientWrapper:
         self.api_key = api_key.strip() if api_key else ""
         self.timeout = float(timeout) if timeout and timeout > 0 else 10.0
         self.failure_mode = normalize_failure_mode(failure_mode)
-        self.model = normalize_typesafe_model(model)
-        self.base_url = normalize_typesafe_base_url(base_url)
+        self.model = normalize_systemone_model(model)
+        self.base_url = normalize_systemone_base_url(base_url)
 
         if self.rate_limiter.limit_per_minute != rate_limit_per_minute:
             self.rate_limiter = SlidingWindowRateLimiter(rate_limit_per_minute)
@@ -139,7 +139,7 @@ class TypeSafeClientWrapper:
         """实际生效的 API 根地址（自定义未被 SDK 支持时回退官方默认值）。"""
         if self.base_url and self.base_url_supported:
             return self.base_url
-        return DEFAULT_TYPESAFE_BASE_URL
+        return DEFAULT_API_BASE_URL
 
     def is_configured(self) -> bool:
         return bool(self.api_key and self._client)
@@ -158,23 +158,23 @@ class TypeSafeClientWrapper:
         if self.enable_cache and self.cache and cache_key_text:
             cached = self.cache.get(cache_key_text)
             if cached is not None:
-                logger.debug(f"[TypeSafe] 命中了本地缓存结果: {cache_key_text[:30]}...")
+                logger.debug(f"[SystemOne] 命中了本地缓存结果: {cache_key_text[:30]}...")
                 return cached
 
         # 2. 检查配置
         if not self.is_configured():
-            logger.warning("[TypeSafe] API Key 未配置或客户端未初始化")
+            logger.warning("[SystemOne] API Key 未配置或客户端未初始化")
             return self._handle_failure("api_key_missing")
 
         # 3. 检查速率限制
         if not self.rate_limiter.allow_request():
-            logger.warning("[TypeSafe] 达到每分钟请求限制，跳过本次请求")
+            logger.warning("[SystemOne] 达到每分钟请求限制，跳过本次请求")
             return self._handle_failure("rate_limit_exceeded")
 
         # 4. 执行异步 API 调用
         try:
             assert self._client is not None
-            logger.info(f"[TypeSafe] [2/4 调用TypeSafe] 正在向 API 请求分析 (模型: {self.model})...")
+            logger.info(f"[SystemOne] [2/4 调用 SystemOne] 正在向 API 请求分析 (模型: {self.model})...")
             response = await asyncio.wait_for(
                 self._client.system_one(
                     state=state,
@@ -201,27 +201,27 @@ class TypeSafeClientWrapper:
             return result
 
         except asyncio.TimeoutError:
-            logger.warning(f"[TypeSafe] API 调用超时 (超限 {self.timeout}s)")
+            logger.warning(f"[SystemOne] API 调用超时 (超限 {self.timeout}s)")
             return self._handle_failure("timeout")
         except TypeSafeAPITimeoutError as e:
-            logger.warning(f"[TypeSafe] API 超时错误: {e}")
+            logger.warning(f"[SystemOne] API 超时错误: {e}")
             return self._handle_failure("timeout")
         except TypeSafeRateLimitError as e:
-            logger.warning(f"[TypeSafe] 触发服务端 429 速率限制: {e}")
+            logger.warning(f"[SystemOne] 触发服务端 429 速率限制: {e}")
             return self._handle_failure("rate_limit_429")
         except TypeSafeAuthenticationError as e:
-            logger.error(f"[TypeSafe] API Key 鉴权失败: {e}")
+            logger.error(f"[SystemOne] API Key 鉴权失败: {e}")
             return self._handle_failure("auth_failed")
         except TypeSafeError as e:
-            logger.error(f"[TypeSafe] TypeSafe 接口返回错误: {e}")
-            return self._handle_failure(f"typesafe_error: {e}")
+            logger.error(f"[SystemOne] SystemOne 接口返回错误: {e}")
+            return self._handle_failure(f"systemone_error: {e}")
         except Exception as e:
-            logger.error(f"[TypeSafe] 未知网络或系统异常: {e}", exc_info=True)
+            logger.error(f"[SystemOne] 未知网络或系统异常: {e}", exc_info=True)
             return self._handle_failure(f"exception: {e}")
 
     def _handle_failure(self, reason: str) -> Dict[str, Any]:
         """根据 failure_mode 返回降级结果"""
-        logger.info(f"[TypeSafe] 按照 failure_mode='{self.failure_mode}' 处理异常 (原因: {reason})")
+        logger.info(f"[SystemOne] 按照 failure_mode='{self.failure_mode}' 处理异常 (原因: {reason})")
         return {
             "success": False,
             "error_reason": reason,
@@ -229,7 +229,7 @@ class TypeSafeClientWrapper:
         }
 
     async def test_api_connection(self) -> Dict[str, Any]:
-        """用于 /typesafe_status 或 /typesafe_test 检测 API 是否通畅"""
+        """用于 /systemone_status 或 /systemone_test 检测 API 是否通畅"""
         if not self.is_configured():
             return {"ok": False, "message": "API Key 未填写"}
 

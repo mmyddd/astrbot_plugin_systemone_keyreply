@@ -1,6 +1,6 @@
 /* ============================================================
    插件页冒烟测试
-   在最小 DOM 桩下真实执行 pages/typesafe-console/js/*.js，
+   在最小 DOM 桩下真实执行 pages/systemone-console/js/*.js，
    捕获 ReferenceError（如曾经的 "$$ is not defined"）与渲染期异常。
 
    运行： node tests/page_smoke.cjs
@@ -10,7 +10,7 @@ const vm = require('vm');
 const fs = require('fs');
 const path = require('path');
 const REPO = require('path').resolve(__dirname, '..');
-const DIR = require('path').join(REPO, 'pages', 'typesafe-console', 'js') + require('path').sep;
+const DIR = require('path').join(REPO, 'pages', 'systemone-console', 'js') + require('path').sep;
 const SCHEMA = require('path').join(REPO, '_conf_schema.json');
 
 function matchSel(n, sel) {

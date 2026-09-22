@@ -139,7 +139,7 @@ class CooldownTracker:
 
 
 class SlidingWindowRateLimiter:
-    """滑动窗口限流器，用于控制 TypeSafe 每分钟 API 请求数"""
+    """滑动窗口限流器，用于控制 SystemOne 每分钟 API 请求数"""
 
     def __init__(self, limit_per_minute: int = 60):
         self.limit_per_minute = limit_per_minute
@@ -373,8 +373,8 @@ def normalize_reply_delay_mode(val: Any) -> str:
     return "random"
 
 
-def normalize_typesafe_model(selected: Any, custom: str = "") -> str:
-    """归一化 TypeSafe 模型名称"""
+def normalize_systemone_model(selected: Any, custom: str = "") -> str:
+    """归一化 SystemOne 模型名称"""
     c = str(custom or "").strip()
     if c:
         return c
@@ -388,14 +388,14 @@ def normalize_typesafe_model(selected: Any, custom: str = "") -> str:
     return str(selected).strip() if str(selected).strip() else "jev-latest"
 
 # TypeSafe 官方地址：base_url 留空时走的默认值
-DEFAULT_TYPESAFE_BASE_URL = "https://api.typesafe.ai"
+DEFAULT_API_BASE_URL = "https://api.typesafe.ai"
 
 # SDK 会自动拼接在 base_url 之后的接口路径（typesafe-sdk endpoints 定义）
-_TYPESAFE_PATH_SUFFIXES = ("/v1/systemone", "/v1/models", "/v1")
+_API_PATH_SUFFIXES = ("/v1/systemone", "/v1/models", "/v1")
 
 
-def normalize_typesafe_base_url(val: Any) -> str:
-    """归一化 TypeSafe API Base URL。
+def normalize_systemone_base_url(val: Any) -> str:
+    """归一化 SystemOne API Base URL。
 
     TypeSafe SDK 会在 base_url 之后【自动拼接】接口路径（/v1/systemone），
     所以这里统一把输入收敛成「根地址」：
@@ -417,7 +417,7 @@ def normalize_typesafe_base_url(val: Any) -> str:
         text = "https://" + text
     while True:
         lowered = text.lower()
-        for suffix in _TYPESAFE_PATH_SUFFIXES:
+        for suffix in _API_PATH_SUFFIXES:
             if lowered.endswith(suffix):
                 text = text[: -len(suffix)].rstrip("/")
                 break

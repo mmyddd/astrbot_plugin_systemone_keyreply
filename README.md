@@ -1,4 +1,4 @@
-# AstrBot TypeSafe AI 智能自动回复插件
+# AstrBot SystemOne 智能自动回复插件
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-blue.svg)](https://github.com/AstrBotDevs/AstrBot)
 [![TypeSafe](https://img.shields.io/badge/TypeSafe-Jev%20System%20One-brightgreen.svg)](https://typesafe.ai)
@@ -104,19 +104,35 @@ TypeSafe 超时、限流（429）、鉴权失败或网络异常时按配置降�
 ## 安装说明
 
 ### 方式一：AstrBot WebUI 插件市场安装
-在 AstrBot 控制面板中的“插件市场”搜索 `astrbot_plugin_typesafe_keyreply` 并点击安装。
+在 AstrBot 控制面板中的“插件市场”搜索 `astrbot_plugin_systemone_keyreply` 并点击安装。
 
 ### 方式二：手动安装
 进入 AstrBot 的 `data/plugins/` 目录，克隆或解压本项目：
 ```bash
 cd data/plugins/
-git clone https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply.git
+git clone https://github.com/mmyddd/astrbot_plugin_systemone_keyreply.git
 ```
 在 AstrBot 对应 Python 环境中安装依赖：
 ```bash
-pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
+pip install -r astrbot_plugin_systemone_keyreply/requirements.txt
 ```
 重启 AstrBot 即可。本插件仅依赖 `typesafe-sdk`。
+
+### 从旧版本升级（`astrbot_plugin_typesafe_keyreply` → `astrbot_plugin_systemone_keyreply`）
+
+本版本把插件名、页面与配置键统一到 SystemOne 命名。**配置不用重填，数据不用手搬**：
+
+| 变更项 | 旧 | 新 | 需要你做什么 |
+|---|---|---|---|
+| 插件名 | `astrbot_plugin_typesafe_keyreply` | `astrbot_plugin_systemone_keyreply` | 按新插件名重新安装/克隆 |
+| 配置键 | `typesafe_api_key` 等 5 项 | `systemone_api_key` 等 5 项 | 无，启动时自动迁移并保存 |
+| 数据目录 | `plugin_data/astrbot_plugin_typesafe_keyreply/` | `plugin_data/astrbot_plugin_systemone_keyreply/` | 无，首次启动自动复制（不覆盖已有数据） |
+| 插件页 id | `typesafe-console` | `systemone-console` | 无 |
+| 指令 | `/typesafe_status`、`/typesafe_test` | `/systemone_status`、`/systemone_test` | 改用新指令名（未保留旧别名） |
+
+> [!NOTE]
+> **术语**：SystemOne 是 TypeSafe 提出的大模型规范（接口路径 `/v1/systemone`，模型 Jev System One），
+> 不是品牌；厂商、SDK、控制台与官方域名仍写作 TypeSafe。
 
 ---
 
@@ -124,9 +140,9 @@ pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
 
 ### 第一步：填写 API Key
 
-进入 **插件 -> TypeSafe 智能自动回复 -> 配置中心 -> TypeSafe 判定**，填入在 [TypeSafe 控制台](https://console.typesafe.ai/) 获取的 API Key（形如 `ts_...`），保存后在「运行状态」页点一次**测试 TypeSafe 连通性**确认可用。
+进入 **插件 -> SystemOne 智能自动回复 -> 配置中心 -> SystemOne 判定**，填入 API 密钥（形如 `sk_...`），保存后在「运行状态」页点一次**测试 SystemOne 连通性**确认可用。
 
-如果你通过自建反代或网关访问 TypeSafe，可以顺手填写 **TypeSafe API Base URL**。**该地址只需填到域名（或反代根路径），插件会自动在其后追加 `/v1/systemone` 后缀**——所以不要自己把 `/v1/systemone` 写进去。留空则使用官方地址 `https://api.typesafe.ai`。漏写 `https://` 或误带后缀都会被自动纠正。
+如果你通过自建反代或网关访问 TypeSafe，可以顺手填写 **SystemOne API Base URL**。**该地址只需填到域名（或反代根路径），插件会自动在其后追加 `/v1/systemone` 后缀**——所以不要自己把 `/v1/systemone` 写进去。留空则使用官方地址 `https://api.typesafe.ai`。漏写 `https://` 或误带后缀都会被自动纠正。
 
 ### 第二步：维护问答表
 
@@ -147,18 +163,18 @@ pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
 
 ## 配置中心
 
-在 AstrBot Web 控制台进入 **插件 -> TypeSafe 智能自动回复 -> 配置中心**。页面分四个标签页：
+在 AstrBot Web 控制台进入 **插件 -> SystemOne 智能自动回复 -> 配置中心**。页面分四个标签页：
 
 | 标签页 | 用途 |
 |---|---|
 | **配置中心** | 按 9 个分组编辑全部 39 项配置，支持单项/整组恢复默认、改动高亮与一键保存热重载 |
 | **固定问答** | 维护问答表：答案为中心的分组卡片、多问法、Jev 判定开关、KeyReply 一键复制、命中测试 |
-| **运行状态** | 等价于 `/typesafe_status` 的结构化面板，含限流用量条、问答表规模与**一键连通性测试** |
+| **运行状态** | 等价于 `/systemone_status` 的结构化面板，含限流用量条、问答表规模与**一键连通性测试** |
 | **在线试判** | 输入一条消息真实跑一遍「正则召回 → Jev 相关性判定」，展示召回条目、判定结论、置信度与理由 |
 
 页面能力要点：
 
-- **API Key 掩码**：读取时返回 `ts_a********lmno` 形式的掩码，保持掩码提交即表示不修改，密钥不会被 `********` 覆盖。
+- **API Key 掩码**：读取时返回 `sk_a********lmno` 形式的掩码，保持掩码提交即表示不修改，密钥不会被 `********` 覆盖。
 - **保存即热重载**：保存后自动调用 `save_config()` 并尝试重载插件，无需重启 AstrBot；重载不可用时会在页面提示。
 - **与原生表单共存**：若你的 AstrBot 版本不支持插件页，后端会打印一条警告并跳过路由注册，插件主体功能不受影响，仍可用原生表单配置。
 
@@ -167,7 +183,7 @@ pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
 | 分组 | 内容 |
 |---|---|
 | 基础开关 | 插件总开关、群聊/私聊启用、忽略机器人消息/指令/纯媒体、上下文条数 |
-| TypeSafe 判定 | API Key、API Base URL（自动追加 `/v1/systemone`）、判定模型（支持自定义）、超时、失败处理策略、限流与缓存 |
+| SystemOne 判定 | API Key、API Base URL（自动追加 `/v1/systemone`）、判定模型（支持自定义）、超时、失败处理策略、限流与缓存 |
 | 回复生成 | 模型来源（跟随会话/指定 Provider）、回复风格、长度模式、字数上限、附加提示词 |
 | 固定问答表（KeyReply） | 相关性判定最低置信度 |
 | 模拟真人延时 | 延时开关、随机/固定模式与区间 |
@@ -182,8 +198,8 @@ pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
 
 | 指令 | 权限 | 说明 |
 |---|---|---|
-| `/typesafe_status` | 所有人 | 查看插件运行状态、API 就绪情况与生效规则（配置中心「运行状态」页为其结构化版本） |
-| `/typesafe_test <消息内容>` | 所有人 | 测试一条消息的召回与 Jev 判定结果：显示命中了哪些 Q、判为真提问还是假命中、以及会回复的答案。不触发真实回复 |
+| `/systemone_status` | 所有人 | 查看插件运行状态、API 就绪情况与生效规则（配置中心「运行状态」页为其结构化版本） |
+| `/systemone_test <消息内容>` | 所有人 | 测试一条消息的召回与 Jev 判定结果：显示命中了哪些 Q、判为真提问还是假命中、以及会回复的答案。不触发真实回复 |
 
 ---
 
@@ -191,7 +207,7 @@ pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
 
 | 内容 | 位置 |
 |---|---|
-| 问答表 | `data/plugin_data/astrbot_plugin_typesafe_keyreply/qa_tables.json` |
+| 问答表 | `data/plugin_data/astrbot_plugin_systemone_keyreply/qa_tables.json` |
 | KeyReply 来源文件（只读探测） | `data/plugins/keyword_reply/triggers.yml` |
 
 问答表使用 JSON 存储，支持全局默认表、按群独立表与按私聊独立表三级作用域。
@@ -234,7 +250,7 @@ pip install -r astrbot_plugin_typesafe_keyreply/requirements.txt
   - 插件骨架与运行时模块（`main.py`、`utils.py`、`filters.py`、`context_manager.py` 等）；
   - **TypeSafe AI（Jev System One）** 的接入与故障降级、限流、缓存等容错机制；
   - 防刷屏与频控体系（会话/用户冷却、最大连续回复次数、黑白名单、消息卫生过滤）；
-  - 回复风格与长度定制、模拟真人延时、`/typesafe_status` 与 `/typesafe_test` 指令。
+  - 回复风格与长度定制、模拟真人延时、`/systemone_status` 与 `/systemone_test` 指令。
 
 > [!NOTE]
 > 本项目是上述两个项目的衍生作品，三者的版权声明均保留在 [LICENSE](LICENSE) 中：

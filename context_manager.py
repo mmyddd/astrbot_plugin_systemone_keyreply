@@ -109,7 +109,7 @@ class ContextManager:
             lines.append(f"{r.sender_name}: {r.content}")
         return "\n".join(lines)
 
-    def build_typesafe_state(
+    def build_systemone_state(
         self,
         records: List[MessageRecord],
         current_message: str,

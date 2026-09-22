@@ -2,6 +2,7 @@ import sys
 import time
 import asyncio
 import re
+import shutil
 from pathlib import Path
 from typing import AsyncGenerator, Any
 
@@ -29,7 +30,7 @@ try:
         question_of,
         describe_match,
     )
-    from .typesafe_client import TypeSafeClientWrapper
+    from .systemone_client import SystemOneClientWrapper
     from .classifier import MessageClassifier, REPLY_TYPE_NAMES
     from .reply_engine import ReplyEngine
     from .context_manager import ContextManager
@@ -43,8 +44,8 @@ try:
         normalize_reply_style,
         normalize_reply_length_mode,
         normalize_filter_mode,
-        normalize_typesafe_base_url,
-        normalize_typesafe_model,
+        normalize_systemone_base_url,
+        normalize_systemone_model,
     )
 except (ImportError, ValueError):
     from qa_store import QAStore, SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE, regroup_answers
@@ -60,7 +61,7 @@ except (ImportError, ValueError):
         question_of,
         describe_match,
     )
-    from typesafe_client import TypeSafeClientWrapper
+    from systemone_client import SystemOneClientWrapper
     from classifier import MessageClassifier, REPLY_TYPE_NAMES
     from reply_engine import ReplyEngine
     from context_manager import ContextManager
@@ -74,8 +75,8 @@ except (ImportError, ValueError):
         normalize_reply_style,
         normalize_reply_length_mode,
         normalize_filter_mode,
-        normalize_typesafe_base_url,
-        normalize_typesafe_model,
+        normalize_systemone_base_url,
+        normalize_systemone_model,
     )
 
 
@@ -89,7 +90,7 @@ CQ_IMAGE_REGEX = re.compile(r"\[CQ:image,[^\]]*?(?:url|file)=([^,\]]+)", re.IGNO
 # ═══════════════════════════════════════════════════════════════
 
 SECRET_MASK = "********"
-SECRET_FIELDS = ("typesafe_api_key",)
+SECRET_FIELDS = ("systemone_api_key",)
 
 _EDITABLE_LIST_FIELDS = (
     "session_whitelist",
@@ -100,10 +101,10 @@ _EDITABLE_LIST_FIELDS = (
 
 _EDITABLE_TEXT_FIELDS = (
     "qa_min_confidence",
-    "typesafe_api_key",
-    "typesafe_base_url",
-    "typesafe_model",
-    "typesafe_custom_model",
+    "systemone_api_key",
+    "systemone_base_url",
+    "systemone_model",
+    "systemone_custom_model",
     "failure_mode",
     "model_mode",
     "custom_provider_id",
@@ -127,7 +128,7 @@ _EDITABLE_BOOL_FIELDS = (
 )
 
 _EDITABLE_INT_FIELDS = (
-    "typesafe_timeout",
+    "systemone_timeout",
     "max_chars",
     "reply_delay_min",
     "reply_delay_max",
@@ -141,6 +142,22 @@ _EDITABLE_INT_FIELDS = (
     "rate_limit_per_minute",
     "cache_ttl",
 )
+
+# 插件名：@register、数据目录、Web API 路由与热重载共用同一来源
+PLUGIN_NAME = "astrbot_plugin_systemone_keyreply"
+
+# 改名前的插件名（v1.0.2 及更早）：仅用于一次性数据目录迁移
+LEGACY_PLUGIN_NAME = "astrbot_plugin_typesafe_keyreply"
+
+# 改名前的配置键 → 现配置键。老用户升级后无需重填任何一项：
+# 读取配置前先就地搬迁，旧键保留不删，避免动到 AstrBot 自身的配置增删逻辑。
+LEGACY_CONFIG_KEY_MAP = {
+    "typesafe_api_key": "systemone_api_key",
+    "typesafe_base_url": "systemone_base_url",
+    "typesafe_timeout": "systemone_timeout",
+    "typesafe_model": "systemone_model",
+    "typesafe_custom_model": "systemone_custom_model",
+}
 
 
 def _as_list(raw: object) -> list:
@@ -200,40 +217,43 @@ def _mask_secret(value: object) -> str:
 
 
 # 插件版本：@register 与状态 API 共用同一来源，避免两处不一致
-PLUGIN_VERSION = "1.0.2"
+PLUGIN_VERSION = "1.0.3"
 
 
 @register(
-    "astrbot_plugin_typesafe_keyreply",
+    PLUGIN_NAME,
     "mmyddd",
-    "固定问答表驱动的自动关键词回复插件。消息先经本地正则召回，命中后由 TypeSafe AI 判定是否真提问，再回复标准答案。",
+    "固定问答表驱动的自动关键词回复插件。消息先经本地正则召回，命中后由 TypeSafe AI 的 SystemOne 判定是否真提问，再回复标准答案。",
     PLUGIN_VERSION,
-    "https://github.com/mmyddd/astrbot_plugin_typesafe_keyreply",
+    "https://github.com/mmyddd/astrbot_plugin_systemone_keyreply",
 )
-class TypeSafeAutoReplyPlugin(Star):
+class SystemOneKeyReplyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.context = context
         self.config = config or {}
+
+        # 0. 旧版配置键一次性迁移（typesafe_* → systemone_*），必须在读取配置之前
+        self._migrate_legacy_config()
 
         # 1. 基础配置
         self.enable_plugin = self.config.get("enable_plugin", True)
         self.enable_group = self.config.get("enable_group", True)
         self.enable_private = self.config.get("enable_private", False)
 
-        # 2. TypeSafe AI 配置 (支持中英文双语选项自动归一化与模型选择)
-        self.typesafe_api_key = self.config.get("typesafe_api_key", "")
+        # 2. SystemOne 判定配置 (走 TypeSafe AI，支持中英文双语选项自动归一化与模型选择)
+        self.systemone_api_key = self.config.get("systemone_api_key", "")
         # Base URL 只填根地址，SDK 会自动拼接 /v1/systemone
-        self.typesafe_base_url = normalize_typesafe_base_url(
-            self.config.get("typesafe_base_url", "")
+        self.systemone_base_url = normalize_systemone_base_url(
+            self.config.get("systemone_base_url", "")
         )
-        self.typesafe_timeout = self.config.get("typesafe_timeout", 10)
-        self.typesafe_model_raw = self.config.get(
-            "typesafe_model", "jev-latest (推荐最新旗舰)"
+        self.systemone_timeout = self.config.get("systemone_timeout", 10)
+        self.systemone_model_raw = self.config.get(
+            "systemone_model", "jev-latest (推荐最新旗舰)"
         )
-        self.typesafe_custom_model = self.config.get("typesafe_custom_model", "")
-        self.typesafe_model = normalize_typesafe_model(
-            self.typesafe_model_raw, self.typesafe_custom_model
+        self.systemone_custom_model = self.config.get("systemone_custom_model", "")
+        self.systemone_model = normalize_systemone_model(
+            self.systemone_model_raw, self.systemone_custom_model
         )
 
         self.failure_mode = normalize_failure_mode(
@@ -303,17 +323,17 @@ class TypeSafeAutoReplyPlugin(Star):
         self.debug_log = self.config.get("debug_log", False)
 
         # 初始化子模块
-        self.typesafe_client = TypeSafeClientWrapper(
-            api_key=self.typesafe_api_key,
-            base_url=self.typesafe_base_url,
-            timeout=self.typesafe_timeout,
+        self.systemone_client = SystemOneClientWrapper(
+            api_key=self.systemone_api_key,
+            base_url=self.systemone_base_url,
+            timeout=self.systemone_timeout,
             rate_limit_per_minute=self.rate_limit_per_minute,
             enable_cache=self.enable_cache,
             cache_ttl=self.cache_ttl,
             failure_mode=self.failure_mode,
-            model=self.typesafe_model,
+            model=self.systemone_model,
         )
-        self.classifier = MessageClassifier(self.typesafe_client)
+        self.classifier = MessageClassifier(self.systemone_client)
         self.reply_engine = ReplyEngine(self.context)
         self.context_manager = ContextManager(max_history_per_session=20)
         self.cooldown_tracker = CooldownTracker()
@@ -332,9 +352,9 @@ class TypeSafeAutoReplyPlugin(Star):
         self._register_web_apis()
 
         logger.info(
-            f"[TypeSafe] 插件已加载. 启用状态: {self.enable_plugin}, "
-            f"API配置: {self.typesafe_client.is_configured()}, 模型: {self.typesafe_model}, "
-            f"API地址: {self.typesafe_client.effective_base_url}, "
+            f"[SystemOne] 插件已加载. 启用状态: {self.enable_plugin}, "
+            f"API配置: {self.systemone_client.is_configured()}, 模型: {self.systemone_model}, "
+            f"API地址: {self.systemone_client.effective_base_url}, "
             f"群聊: {self.enable_group}, 私聊: {self.enable_private}"
         )
 
@@ -348,7 +368,7 @@ class TypeSafeAutoReplyPlugin(Star):
             fixed_delay=self.reply_delay_fixed,
         )
         if delay > 0:
-            logger.info(f"[TypeSafe] 模拟思考打字延时 {delay:.2f} 秒...")
+            logger.info(f"[SystemOne] 模拟思考打字延时 {delay:.2f} 秒...")
             await asyncio.sleep(delay)
 
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
@@ -409,7 +429,7 @@ class TypeSafeAutoReplyPlugin(Star):
                     if url:
                         image_urls.append(str(url).strip())
         except Exception as e:
-            logger.debug(f"[TypeSafe] 提取消息组件图片失败: {e}")
+            logger.debug(f"[SystemOne] 提取消息组件图片失败: {e}")
 
         # 如果组件未提取到但消息文本中含 CQ:image 码或 [图片]
         if not image_urls and "[CQ:image" in text:
@@ -457,7 +477,7 @@ class TypeSafeAutoReplyPlugin(Star):
         # 4. 是否系统消息或命令消息？
         if is_cmd and self.ignore_commands:
             if self.debug_log:
-                logger.debug(f"[TypeSafe] [规则过滤] 忽略指令消息: \"{display_msg}\"")
+                logger.debug(f"[SystemOne] [规则过滤] 忽略指令消息: \"{display_msg}\"")
             return
 
         # 5. 是否纯媒体/图片/表情空文本消息？
@@ -466,12 +486,12 @@ class TypeSafeAutoReplyPlugin(Star):
             is_pure_media or (has_image and (not text or text == "[图片]"))
         ):
             if self.debug_log:
-                logger.debug(f"[TypeSafe] [规则过滤] 忽略纯媒体/表情消息: \"{display_msg}\"")
+                logger.debug(f"[SystemOne] [规则过滤] 忽略纯媒体/表情消息: \"{display_msg}\"")
             return
 
         # 日志记录进入决策流水线的消息
         logger.info(
-            f"[TypeSafe] [1/4 收到消息] 会话: {session_id} | 发送者: {sender_name}({sender_id}) | 内容: \"{display_msg}\""
+            f"[SystemOne] [1/4 收到消息] 会话: {session_id} | 发送者: {sender_name}({sender_id}) | 内容: \"{display_msg}\""
         )
 
         # 6. 黑白名单检查 (黑名单 > 白名单，兼容多格式ID，直接使用预计算 set 提升检索效率)
@@ -485,7 +505,7 @@ class TypeSafeAutoReplyPlugin(Star):
             user_blacklist=self.user_blacklist_set,
         )
         if not allowed:
-            logger.info(f"[TypeSafe] [规则过滤] 黑白名单拦截 ({wl_reason})")
+            logger.info(f"[SystemOne] [规则过滤] 黑白名单拦截 ({wl_reason})")
             return
 
         # 7. 消息长度检查（当包含图片且未开启忽略纯媒体时，跳过最短长度限制）
@@ -497,7 +517,7 @@ class TypeSafeAutoReplyPlugin(Star):
         )
         if not valid_len:
             if self.debug_log:
-                logger.debug(f"[TypeSafe] [规则过滤] 消息长度不在有效区间 ({len_reason})")
+                logger.debug(f"[SystemOne] [规则过滤] 消息长度不在有效区间 ({len_reason})")
             return
 
         # 8. 冷却检查与连续回复限制
@@ -509,7 +529,7 @@ class TypeSafeAutoReplyPlugin(Star):
             bypass=False,
         )
         if is_cooling:
-            logger.info(f"[TypeSafe] [频控拦截] 处于冷却中 ({cd_reason})")
+            logger.info(f"[SystemOne] [频控拦截] 处于冷却中 ({cd_reason})")
             return
 
         if self.cooldown_tracker.is_continuous_limit_reached(
@@ -518,11 +538,11 @@ class TypeSafeAutoReplyPlugin(Star):
             bypass=False,
         ):
             logger.info(
-                f"[TypeSafe] [频控拦截] 会话 {session_id} 达到连续回复上限 ({self.max_continuous_replies}轮)，暂停主动发言"
+                f"[SystemOne] [频控拦截] 会话 {session_id} 达到连续回复上限 ({self.max_continuous_replies}轮)，暂停主动发言"
             )
             return
 
-        # 9. 获取最近聊天上下文并组装 TypeSafe State
+        # 9. 获取最近聊天上下文并组装 SystemOne State
         recent_records = self.context_manager.get_recent_messages(
             session_id=session_id,
             count=self.context_message_count,
@@ -537,7 +557,7 @@ class TypeSafeAutoReplyPlugin(Star):
             else:
                 eval_text = f"{text} (用户同时发送了图片/截图)"
 
-        state = self.context_manager.build_typesafe_state(
+        state = self.context_manager.build_systemone_state(
             records=recent_records,
             current_message=eval_text,
             current_sender_name=sender_name,
@@ -568,11 +588,11 @@ class TypeSafeAutoReplyPlugin(Star):
         # ── 1. 本地正则召回 ───────────────────────────────────
         candidates = self.qa_store.recall_candidates(text, scope, scope_id)
         if not candidates:
-            logger.debug("[TypeSafe][QA] 正则未命中任何 Q，静默（未调用 Jev）")
+            logger.debug("[SystemOne][QA] 正则未命中任何 Q，静默（未调用 Jev）")
             return
 
         logger.debug(
-            "[TypeSafe][QA] 召回 %d 条 Q: %s"
+            "[SystemOne][QA] 召回 %d 条 Q: %s"
             % (len(candidates), " | ".join(c["question"] for c in candidates))
         )
 
@@ -585,7 +605,7 @@ class TypeSafeAutoReplyPlugin(Star):
         # 未开启判定的条目先到先得：它们显式要求「命中即回复」
         if direct:
             logger.debug(
-                "[TypeSafe][QA] 命中未开启 Jev 判定的条目，直接回复：%s" % direct[0]["question"]
+                "[SystemOne][QA] 命中未开启 Jev 判定的条目，直接回复：%s" % direct[0]["question"]
             )
             async for _ in self._qa_send_answer(
                 event, text, session_id, direct[0], image_urls, llm_mode=False
@@ -594,14 +614,14 @@ class TypeSafeAutoReplyPlugin(Star):
             return
 
         if not judged:
-            logger.debug("[TypeSafe][QA] 候选均未开启 Jev 判定且无直接条目，静默")
+            logger.debug("[SystemOne][QA] 候选均未开启 Jev 判定且无直接条目，静默")
             return
 
         candidates = judged
 
         # ── 2. Jev 相关性判定（仅在有召回时发生）──────────────
-        if not self.typesafe_client.is_configured():
-            logger.warning("[TypeSafe][QA] 已召回候选，但 TypeSafe API Key 未配置，保持静默")
+        if not self.systemone_client.is_configured():
+            logger.warning("[SystemOne][QA] 已召回候选，但 SystemOne API Key 未配置，保持静默")
             return
 
         recent_records = self.context_manager.get_recent_messages(
@@ -610,7 +630,7 @@ class TypeSafeAutoReplyPlugin(Star):
             ignore_bots=self.ignore_bots,
             ignore_commands=self.ignore_commands,
         )
-        state = self.context_manager.build_typesafe_state(
+        state = self.context_manager.build_systemone_state(
             records=recent_records,
             current_message=text,
             current_sender_name=event.get_sender_name() or "群友",
@@ -621,20 +641,20 @@ class TypeSafeAutoReplyPlugin(Star):
         )
 
         if not topic.matched:
-            logger.debug(f"[TypeSafe][QA] {topic.reason}")
+            logger.debug(f"[SystemOne][QA] {topic.reason}")
             return
 
         if not MessageClassifier.is_confidence_sufficient(
             topic.confidence_level, self.qa_min_confidence
         ):
             logger.debug(
-                "[TypeSafe][QA] 判定相关但置信度 '%s' 未达到阈值 '%s'，保持静默"
+                "[SystemOne][QA] 判定相关但置信度 '%s' 未达到阈值 '%s'，保持静默"
                 % (topic.confidence_level, self.qa_min_confidence)
             )
             return
 
         chosen = next((c for c in candidates if c["question"] == topic.question), candidates[0])
-        logger.debug(f"[TypeSafe][QA] Jev 判定为真提问：{topic.question}")
+        logger.debug(f"[SystemOne][QA] Jev 判定为真提问：{topic.question}")
 
         # ── 3. 回复该条答案 ───────────────────────────────────
         async for _ in self._qa_send_answer(event, text, session_id, chosen, image_urls):
@@ -649,7 +669,7 @@ class TypeSafeAutoReplyPlugin(Star):
         answer_text = str(chosen.get("answer_text") or "").strip()
         answer_images = list(chosen.get("answer_images") or [])
         if not answer_text and not answer_images:
-            logger.warning("[TypeSafe][QA] 选中条目的答案为空，保持静默")
+            logger.warning("[SystemOne][QA] 选中条目的答案为空，保持静默")
             return
 
         reply_text = answer_text
@@ -677,14 +697,14 @@ class TypeSafeAutoReplyPlugin(Star):
             if generated:
                 reply_text = generated
             else:
-                logger.warning("[TypeSafe][QA] LLM 未生成回复，直接发送原始答案")
+                logger.warning("[SystemOne][QA] LLM 未生成回复，直接发送原始答案")
 
         await self._apply_reply_delay()
         self.cooldown_tracker.record_reply_sent(session_id, event.get_sender_id())
         event.stop_event()
 
         logger.info(
-            f"[TypeSafe][QA] 已回复会话 {session_id}（问答: {chosen.get('question')}）"
+            f"[SystemOne][QA] 已回复会话 {session_id}（问答: {chosen.get('question')}）"
         )
 
         chain = []
@@ -694,13 +714,13 @@ class TypeSafeAutoReplyPlugin(Star):
             try:
                 chain.append(Image.fromURL(url=url))
             except Exception as e:
-                logger.warning(f"[TypeSafe][QA] 构造图片组件失败 {url}: {e}")
+                logger.warning(f"[SystemOne][QA] 构造图片组件失败 {url}: {e}")
         yield event.chain_result(chain)
 
-    @filter.command("typesafe_status")
-    async def command_typesafe_status(self, event: AstrMessageEvent):
-        """显示 TypeSafe 智能自动回复插件运行状态"""
-        is_configured = self.typesafe_client.is_configured()
+    @filter.command("systemone_status")
+    async def command_systemone_status(self, event: AstrMessageEvent):
+        """显示 SystemOne 智能自动回复插件运行状态"""
+        is_configured = self.systemone_client.is_configured()
         api_health = "正常配置" if is_configured else "未配置 API Key"
 
         delay_info = (
@@ -710,11 +730,11 @@ class TypeSafeAutoReplyPlugin(Star):
         )
 
         status_text = (
-            "=== TypeSafe 智能自动回复插件状态 ===\n"
+            "=== SystemOne 智能自动回复插件状态 ===\n"
             f"插件总开关: {'开启' if self.enable_plugin else '关闭'}\n"
-            f"TypeSafe API 状态: {api_health}\n"
-            f"TypeSafe 判定模型: {self.typesafe_model}\n"
-            f"TypeSafe API 地址: {self.typesafe_client.effective_base_url}\n"
+            f"SystemOne API 状态: {api_health}\n"
+            f"SystemOne 判定模型: {self.systemone_model}\n"
+            f"SystemOne API 地址: {self.systemone_client.effective_base_url}\n"
             f"群聊自动回复: {'开启' if self.enable_group else '关闭'}\n"
             f"私聊自动回复: {'开启' if self.enable_private else '关闭'}\n"
             f"回复来源: 固定问答表（{MODE_LABELS.get(self.qa_mode, self.qa_mode)}）\n"
@@ -730,15 +750,15 @@ class TypeSafeAutoReplyPlugin(Star):
         )
         yield event.plain_result(status_text)
 
-    @filter.command("typesafe_test")
-    async def command_typesafe_test(self, event: AstrMessageEvent, message: str = ""):
+    @filter.command("systemone_test")
+    async def command_systemone_test(self, event: AstrMessageEvent, message: str = ""):
         """测试固定问答表对指定消息的召回与 Jev 相关性判定（不触发真实回复）。"""
         raw_msg = event.get_message_str() or ""
-        match = re.search(r"/?typesafe_test\s+(.*)", raw_msg, re.DOTALL | re.IGNORECASE)
+        match = re.search(r"/?systemone_test\s+(.*)", raw_msg, re.DOTALL | re.IGNORECASE)
         test_text = match.group(1).strip() if match else (message or "").strip()
 
         if not test_text:
-            yield event.plain_result("请在指令后输入要测试的消息内容，例如：/typesafe_test 金锭怎么做")
+            yield event.plain_result("请在指令后输入要测试的消息内容，例如：/systemone_test 金锭怎么做")
             return
 
         is_private = event.is_private_chat()
@@ -776,11 +796,11 @@ class TypeSafeAutoReplyPlugin(Star):
 
         yield event.plain_result(
             f"正则召回命中 {len(judged)} 条：{recalled}\n"
-            f"正在交由 Jev ({self.typesafe_model}) 判断是否真提问..."
+            f"正在交由 Jev ({self.systemone_model}) 判断是否真提问..."
         )
 
-        if not self.typesafe_client.is_configured():
-            yield event.plain_result("错误：TypeSafe API Key 尚未配置，无法执行相关性判定。")
+        if not self.systemone_client.is_configured():
+            yield event.plain_result("错误：SystemOne API Key 尚未配置，无法执行相关性判定。")
             return
 
         state = {"recent_chat": [], "current_message": {"sender": "测试用户", "text": test_text}}
@@ -814,6 +834,66 @@ class TypeSafeAutoReplyPlugin(Star):
             "=========================="
         )
 
+    def _migrate_legacy_config(self) -> list:
+        """把旧版配置键（typesafe_*）就地搬迁成新版键名（systemone_*）。
+
+        老版本的配置文件里只有旧键，新版只认新键。这里在读取配置之前先搬一次，
+        老用户升级后无需重填任何一项。新键已有值时不覆盖，方便手工回退或覆盖。
+        """
+        migrated: list[str] = []
+        for old_key, new_key in LEGACY_CONFIG_KEY_MAP.items():
+            old_value = self.config.get(old_key)
+            if old_value in (None, ""):
+                continue
+            if self.config.get(new_key) not in (None, ""):
+                continue  # 新键已有值，以新键为准
+            try:
+                self.config[new_key] = old_value
+            except Exception as e:
+                logger.warning(
+                    f"[SystemOne] 配置键迁移失败 {old_key} → {new_key}: {e}"
+                )
+                continue
+            migrated.append(f"{old_key} → {new_key}")
+
+        if not migrated:
+            return migrated
+
+        logger.info("[SystemOne] 已迁移旧版配置键: " + "、".join(migrated))
+        save = getattr(self.config, "save_config", None)
+        if callable(save):
+            try:
+                save()
+            except Exception as e:
+                logger.warning(f"[SystemOne] 迁移后的配置保存失败（本次运行仍生效）: {e}")
+        return migrated
+
+    def _migrate_legacy_data_dir(self, base) -> list:
+        """把旧插件名数据目录里的问答表补进新目录（只补缺，不覆盖现有数据）。"""
+        if not LEGACY_PLUGIN_NAME:
+            return []
+        legacy = base.parent / LEGACY_PLUGIN_NAME
+        if legacy == base or not legacy.is_dir():
+            return []
+        moved: list[str] = []
+        for name in ("qa_tables.json",):
+            src, dst = legacy / name, base / name
+            if not src.is_file() or dst.exists():
+                continue
+            try:
+                shutil.copy2(src, dst)
+            except Exception as e:
+                logger.warning(f"[SystemOne] 迁移旧数据文件失败 {src} → {dst}: {e}")
+                continue
+            moved.append(name)
+        if moved:
+            logger.info(
+                f"[SystemOne] 已从旧数据目录 {legacy} 迁移 "
+                + "、".join(moved)
+                + "（旧文件保留，确认无误后可自行删除）"
+            )
+        return moved
+
     def _plugin_data_dir(self):
         """AstrBot 标准插件数据目录：data/plugin_data/<plugin_name>/。"""
         from pathlib import Path
@@ -821,29 +901,31 @@ class TypeSafeAutoReplyPlugin(Star):
         try:
             from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-            base = Path(get_astrbot_data_path()) / "plugin_data" / "astrbot_plugin_typesafe_keyreply"
+            base = Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME
         except Exception:
-            base = Path("data") / "plugin_data" / "astrbot_plugin_typesafe_keyreply"
+            base = Path("data") / "plugin_data" / PLUGIN_NAME
         try:
             base.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            logger.warning(f"[TypeSafe] 创建插件数据目录失败 {base}: {e}")
+            logger.warning(f"[SystemOne] 创建插件数据目录失败 {base}: {e}")
+        # 目录建好后补一次旧目录迁移，之后再交给 QAStore 读取
+        self._migrate_legacy_data_dir(base)
         return base
 
     def _register_web_apis(self):
         """注册配置中心所需的全部 Web API 路由。
 
         页面通过 window.AstrBotPluginPage.apiGet("config/get") 调用，
-        Dashboard 会转发到 /api/plug/astrbot_plugin_typesafe_keyreply/config/get。
+        Dashboard 会转发到 /api/plug/astrbot_plugin_systemone_keyreply/config/get。
         """
-        plugin_name = "astrbot_plugin_typesafe_keyreply"  # 与 metadata.yaml 的 name 一致
+        plugin_name = PLUGIN_NAME  # 与 metadata.yaml 的 name 一致
         routes = (
             ("console/config", self._api_config_get, ["GET"], "读取插件配置（密钥已掩码）"),
             ("console/config/update", self._api_config_update, ["POST"], "更新插件配置并重载"),
             ("console/config/reset", self._api_config_reset, ["POST"], "将选中字段恢复为默认值"),
             ("console/status", self._api_status, ["GET"], "读取运行状态与生效规则"),
             ("console/try", self._api_try, ["POST"], "在线试判一条消息"),
-            ("console/probe", self._api_probe, ["POST"], "测试 TypeSafe API 连通性"),
+            ("console/probe", self._api_probe, ["POST"], "测试 SystemOne API 连通性"),
             ("console/qa/list", self._api_qa_list, ["GET"], "读取固定问答表"),
             ("console/qa/save", self._api_qa_save, ["POST"], "保存某个作用域的问答表"),
             ("console/qa/import", self._api_qa_import, ["POST"], "从 KeyReply 数据文件导入"),
@@ -856,7 +938,7 @@ class TypeSafeAutoReplyPlugin(Star):
                     f"/{plugin_name}/{path}", handler, methods, desc
                 )
             except Exception as e:  # 老版本 AstrBot 不支持插件页时不影响插件主体
-                logger.warning(f"[TypeSafe] 注册 Web API {path} 失败: {e}")
+                logger.warning(f"[SystemOne] 注册 Web API {path} 失败: {e}")
 
     def _plugin_config_object(self):
         """拿到 AstrBot 持有的 AstrBotConfig（非副本），拿不到时退回实例配置。"""
@@ -864,7 +946,7 @@ class TypeSafeAutoReplyPlugin(Star):
             from astrbot.core.star.star import star_registry
 
             for plugin_md in star_registry:
-                if plugin_md.name == "astrbot_plugin_typesafe_keyreply":
+                if plugin_md.name == PLUGIN_NAME:
                     if plugin_md.config:
                         return plugin_md.config
                     break
@@ -878,21 +960,21 @@ class TypeSafeAutoReplyPlugin(Star):
         try:
             config_obj.save_config()
         except Exception as e:
-            logger.warning(f"[TypeSafe] 配置保存失败: {e}")
+            logger.warning(f"[SystemOne] 配置保存失败: {e}")
             return False
 
         try:
             if hasattr(self.context, "reload_plugin"):
-                await self.context.reload_plugin("astrbot_plugin_typesafe_keyreply")
+                await self.context.reload_plugin(PLUGIN_NAME)
                 return True
             if hasattr(self.context, "_star_manager"):
-                await self.context._star_manager.reload("astrbot_plugin_typesafe_keyreply")
+                await self.context._star_manager.reload(PLUGIN_NAME)
                 return True
         except Exception as e:
-            logger.warning(f"[TypeSafe] 插件重载失败: {e}")
+            logger.warning(f"[SystemOne] 插件重载失败: {e}")
             return False
 
-        logger.warning("[TypeSafe] 找不到 reload 方法，配置已保存但需手动重载插件")
+        logger.warning("[SystemOne] 找不到 reload 方法，配置已保存但需手动重载插件")
         return False
 
     def _audit_config_summary(self) -> dict:
@@ -901,8 +983,8 @@ class TypeSafeAutoReplyPlugin(Star):
             "enable_plugin": bool(self.enable_plugin),
             "enable_group": bool(self.enable_group),
             "enable_private": bool(self.enable_private),
-            "configured": self.typesafe_client.is_configured(),
-            "model": self.typesafe_model,
+            "configured": self.systemone_client.is_configured(),
+            "model": self.systemone_model,
             "reply_style": self.reply_style,
             "reply_length_mode": self.reply_length_mode,
             "qa_min_confidence": self.qa_min_confidence,
@@ -1021,7 +1103,7 @@ class TypeSafeAutoReplyPlugin(Star):
             with open(path, "r", encoding="utf-8") as fh:
                 schema = json.load(fh)
         except Exception as e:
-            logger.warning(f"[TypeSafe] 读取 _conf_schema.json 失败: {e}")
+            logger.warning(f"[SystemOne] 读取 _conf_schema.json 失败: {e}")
             return {}
         return {
             key: item.get("default")
@@ -1030,7 +1112,7 @@ class TypeSafeAutoReplyPlugin(Star):
         }
 
     async def _api_status(self) -> dict:
-        """运行状态快照：等价于 /typesafe_status 指令的结构化版本。"""
+        """运行状态快照：等价于 /systemone_status 指令的结构化版本。"""
         delay_info = {
             "enabled": bool(self.enable_reply_delay),
             "mode": self.reply_delay_mode,
@@ -1049,14 +1131,14 @@ class TypeSafeAutoReplyPlugin(Star):
             "enable_plugin": bool(self.enable_plugin),
             "enable_group": bool(self.enable_group),
             "enable_private": bool(self.enable_private),
-            "api_configured": self.typesafe_client.is_configured(),
-            "model": self.typesafe_model,
-            "model_raw": self.typesafe_model_raw,
-            "custom_model": self.typesafe_custom_model,
-            "timeout": self.typesafe_client.timeout,
-            "base_url": self.typesafe_base_url,
-            "base_url_effective": self.typesafe_client.effective_base_url,
-            "base_url_supported": bool(self.typesafe_client.base_url_supported),
+            "api_configured": self.systemone_client.is_configured(),
+            "model": self.systemone_model,
+            "model_raw": self.systemone_model_raw,
+            "custom_model": self.systemone_custom_model,
+            "timeout": self.systemone_client.timeout,
+            "base_url": self.systemone_base_url,
+            "base_url_effective": self.systemone_client.effective_base_url,
+            "base_url_supported": bool(self.systemone_client.base_url_supported),
             "failure_mode": self.failure_mode,
             "reply_style": self.reply_style,
             "reply_length_mode": self.reply_length_mode,
@@ -1070,13 +1152,13 @@ class TypeSafeAutoReplyPlugin(Star):
             "filter_mode": self.filter_mode,
             "context_message_count": self.context_message_count,
             "rate_limit_per_minute": getattr(
-                self.typesafe_client.rate_limiter, "limit_per_minute", 0
+                self.systemone_client.rate_limiter, "limit_per_minute", 0
             ),
-            "rate_limit_used": self.typesafe_client.rate_limiter.current_load(),
+            "rate_limit_used": self.systemone_client.rate_limiter.current_load(),
             "cache_enabled": bool(self.enable_cache),
             "cache_ttl": self.cache_ttl,
-            "cache_size": len(getattr(self.typesafe_client.cache, "_cache", {}))
-            if getattr(self.typesafe_client, "cache", None)
+            "cache_size": len(getattr(self.systemone_client.cache, "_cache", {}))
+            if getattr(self.systemone_client, "cache", None)
             else 0,
             "debug_log": bool(self.debug_log),
             "active_sessions": active,
@@ -1110,10 +1192,10 @@ class TypeSafeAutoReplyPlugin(Star):
                 "would_reply": False,
             }
 
-        if not self.typesafe_client.is_configured():
+        if not self.systemone_client.is_configured():
             return {
                 "ok": False, "text": text,
-                "message": "已召回候选，但 TypeSafe API Key 未配置，无法判定",
+                "message": "已召回候选，但 SystemOne API Key 未配置，无法判定",
             }, 400
 
         state = {"recent_chat": [], "current_message": {"sender": "测试用户", "text": text}}
@@ -1123,7 +1205,7 @@ class TypeSafeAutoReplyPlugin(Star):
                 state=state, candidates=candidates, cache_key_text=text
             )
         except Exception as e:
-            logger.error(f"[TypeSafe] 在线试判失败: {e}", exc_info=True)
+            logger.error(f"[SystemOne] 在线试判失败: {e}", exc_info=True)
             return {"ok": False, "message": f"试判失败: {e}"}, 500
         elapsed_ms = (time.perf_counter() - started) * 1000.0
 
@@ -1137,7 +1219,7 @@ class TypeSafeAutoReplyPlugin(Star):
         return {
             "ok": True,
             "text": text,
-            "model": self.typesafe_model,
+            "model": self.systemone_model,
             "elapsed_ms": round(elapsed_ms, 1),
             "candidate_count": len(candidates),
             "recalled": [
@@ -1160,20 +1242,20 @@ class TypeSafeAutoReplyPlugin(Star):
         }
 
     async def _api_probe(self):
-        """一键测试 TypeSafe API 连通性。"""
-        if not self.typesafe_client:
+        """一键测试 SystemOne API 连通性。"""
+        if not self.systemone_client:
             return {"ok": False, "message": "客户端未初始化"}, 500
 
         started = time.perf_counter()
-        result = await self.typesafe_client.test_api_connection()
+        result = await self.systemone_client.test_api_connection()
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         return {
             "ok": bool(result.get("ok")),
             "message": result.get("message", ""),
-            "model": self.typesafe_model,
+            "model": self.systemone_model,
             "raw_model": getattr(result.get("data"), "model", None),
             "elapsed_ms": round(elapsed_ms, 1),
-            "rate_limit_used": self.typesafe_client.rate_limiter.current_load(),
+            "rate_limit_used": self.systemone_client.rate_limiter.current_load(),
         }
 
     # ── 固定问答表 API ────────────────────────────────────
@@ -1231,7 +1313,7 @@ class TypeSafeAutoReplyPlugin(Star):
             return {"message": "写入数据文件失败，请检查目录权限"}, 500
 
         logger.info(
-            f"[TypeSafe][QA] 已保存问答表 {table.label}，共 {len(table.entries)} 条，"
+            f"[SystemOne][QA] 已保存问答表 {table.label}，共 {len(table.entries)} 条，"
             f"服务 {len(table.ids)} 个会话"
         )
         return {
@@ -1281,7 +1363,7 @@ class TypeSafeAutoReplyPlugin(Star):
         result["tables"] = self.qa_store.table_list()
         if result.get("ok"):
             logger.info(
-                f"[TypeSafe][QA] 已从 {result.get('source_path')} 复制问答表到 "
+                f"[SystemOne][QA] 已从 {result.get('source_path')} 复制问答表到 "
                 f"{result.get('target_path')}（{result.get('message')}）"
             )
         return result, status
@@ -1306,7 +1388,7 @@ class TypeSafeAutoReplyPlugin(Star):
         if not self.qa_store.save():
             return {"message": "写入数据文件失败，请检查目录权限"}, 500
 
-        logger.info(f"[TypeSafe][QA] 已删除问答表: {key or (scope + ':' + scope_id)}")
+        logger.info(f"[SystemOne][QA] 已删除问答表: {key or (scope + ':' + scope_id)}")
         return {
             "message": "ok",
             "tables": self.qa_store.table_list(),
@@ -1360,7 +1442,7 @@ class TypeSafeAutoReplyPlugin(Star):
             }
 
         jev_view = None
-        if judged and self.typesafe_client.is_configured():
+        if judged and self.systemone_client.is_configured():
             state = {"recent_chat": [], "current_message": {"sender": "测试用户", "text": text}}
             started = time.perf_counter()
             topic = await self.classifier.match_relevance(state=state, candidates=judged)
@@ -1385,7 +1467,7 @@ class TypeSafeAutoReplyPlugin(Star):
         elif not judged:
             jev_view = {"matched": False, "reason": "召回条目均未开启 Jev 判定，正则命中即直接回复"}
         else:
-            jev_view = {"matched": False, "reason": "TypeSafe API Key 未配置，无法进行相关性判定"}
+            jev_view = {"matched": False, "reason": "SystemOne API Key 未配置，无法进行相关性判定"}
 
         would_reply = bool(classic_view) or bool(
             jev_view and jev_view.get("matched") and jev_view.get("confidence_ok")
@@ -1406,7 +1488,7 @@ class TypeSafeAutoReplyPlugin(Star):
 
     async def terminate(self):
         """插件卸载或停用时的资源释放"""
-        logger.info("[TypeSafe] 插件正在卸载，清理资源...")
-        if self.typesafe_client.cache:
-            self.typesafe_client.cache.clear()
-        logger.info("[TypeSafe] 插件卸载完成")
+        logger.info("[SystemOne] 插件正在卸载，清理资源...")
+        if self.systemone_client.cache:
+            self.systemone_client.cache.clear()
+        logger.info("[SystemOne] 插件卸载完成")

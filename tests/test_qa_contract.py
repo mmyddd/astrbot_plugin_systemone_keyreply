@@ -22,7 +22,7 @@ from classifier import TopicMatch
 results = []
 def check(n, c, extra=""): results.append((n, bool(c), str(extra)[:200]))
 
-cfg = {"enable_jev_topic": True, "typesafe_api_key": "ts_k_1234567890",
+cfg = {"enable_jev_topic": True, "systemone_api_key": "sk_k_1234567890",
        "qa_min_confidence": "中", "enable_reply_delay": False}
 ctx = type("C", (), {"register_web_api": lambda *a, **k: None,
                      "llm_generate": None})()
@@ -46,7 +46,7 @@ class FakeEvent:
 EV = FakeEvent()
 
 async def run():
-    p = M.TypeSafeAutoReplyPlugin(ctx, cfg)
+    p = M.SystemOneKeyReplyPlugin(ctx, cfg)
     p.qa_store.tables = {}
     p.qa_store.replace_table(SCOPE_GLOBAL, "", [
         {"question": "金锭", "answer": {"text": ANSWER, "images": []}, "hint": HINT, "enabled": True},
@@ -105,7 +105,7 @@ async def run():
     check("提示词声明 A 是唯一事实来源", "唯一事实来源" in sysp, sysp[:60])
 
     # ③ 假命中 → 静默，且不调用 LLM
-    p2 = M.TypeSafeAutoReplyPlugin(ctx, cfg)
+    p2 = M.SystemOneKeyReplyPlugin(ctx, cfg)
     p2.qa_store.tables = {}
     p2.qa_store.replace_table(SCOPE_GLOBAL, "", [
         {"question": "金锭", "answer": {"text": ANSWER, "images": []}, "hint": HINT, "enabled": True},

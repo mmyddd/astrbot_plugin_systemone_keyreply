@@ -2,7 +2,7 @@
   "enable_plugin": {
     "description": "启用插件",
     "type": "bool",
-    "hint": "是否启用 TypeSafe 智能自动回复功能",
+    "hint": "是否启用 SystemOne 智能自动回复功能",
     "default": true
   },
   "enable_group": {
@@ -17,28 +17,28 @@
     "hint": "是否允许在私聊中主动参与（私聊默认推荐关闭，使用原生逻辑）",
     "default": false
   },
-  "typesafe_api_key": {
-    "description": "TypeSafe API Key",
+  "systemone_api_key": {
+    "description": "SystemOne API Key",
     "type": "string",
-    "hint": "TypeSafe 控制台获取的 API 密钥 (ts_...)",
+    "hint": "API 密钥 (sk_...)",
     "default": ""
   },
-  "typesafe_base_url": {
-    "description": "TypeSafe API Base URL",
+  "systemone_base_url": {
+    "description": "SystemOne API Base URL",
     "type": "string",
     "hint": "接口根地址。插件会自动在其后拼接 /v1/systemone 后缀，因此这里只需填到域名（或自建反代根路径），例如 https://api.typesafe.ai；留空使用官方地址。误填完整接口地址或漏写 https:// 都会被自动纠正",
     "default": ""
   },
-  "typesafe_timeout": {
-    "description": "TypeSafe API 超时时间 (秒)",
+  "systemone_timeout": {
+    "description": "SystemOne API 超时时间 (秒)",
     "type": "int",
-    "hint": "TypeSafe 接口调用超时限制，默认 10 秒",
+    "hint": "SystemOne 接口调用超时限制，默认 10 秒",
     "default": 10
   },
-  "typesafe_model": {
-    "description": "TypeSafe 判定模型",
+  "systemone_model": {
+    "description": "SystemOne 判定模型",
     "type": "string",
-    "hint": "TypeSafe 语义决策使用的模型。jev-latest 为官方推荐最新旗舰决策模型，速度快且判断精准",
+    "hint": "SystemOne 语义决策使用的模型。jev-latest 为官方推荐最新旗舰决策模型，速度快且判断精准",
     "options": [
       "jev-latest (推荐最新旗舰)",
       "jev",
@@ -46,16 +46,16 @@
     ],
     "default": "jev-latest (推荐最新旗舰)"
   },
-  "typesafe_custom_model": {
-    "description": "TypeSafe 自定义模型名称",
+  "systemone_custom_model": {
+    "description": "SystemOne 自定义模型名称",
     "type": "string",
-    "hint": "当上面选择'自定义模型'时，在此填入具体的 TypeSafe 模型名称（留空则默认使用 jev-latest）",
+    "hint": "当上面选择'自定义模型'时，在此填入具体的 SystemOne 模型名称（留空则默认使用 jev-latest）",
     "default": ""
   },
   "failure_mode": {
-    "description": "TypeSafe 失败处理策略",
+    "description": "SystemOne 失败处理策略",
     "type": "string",
-    "hint": "当 TypeSafe API 超时或出错时的处理方式",
+    "hint": "当 SystemOne API 超时或出错时的处理方式",
     "options": [
       "静默，不回复",
       "基础规则判断 (问号回复)",
@@ -167,7 +167,7 @@
     "default": 2
   },
   "context_message_count": {
-    "description": "TypeSafe 上下文消息数量",
+    "description": "SystemOne 上下文消息数量",
     "type": "int",
     "hint": "作为判断依据的最近聊天消息条数 (0, 3, 5, 10)",
     "options": [
@@ -235,7 +235,7 @@
   "min_message_length": {
     "description": "最短检测长度",
     "type": "int",
-    "hint": "少于该字数的消息直接忽略，不消耗 TypeSafe API 请求",
+    "hint": "少于该字数的消息直接忽略，不消耗 SystemOne API 请求",
     "default": 2
   },
   "max_message_length": {
@@ -263,13 +263,13 @@
     "default": true
   },
   "rate_limit_per_minute": {
-    "description": "TypeSafe 每分钟最大请求数",
+    "description": "SystemOne 每分钟最大请求数",
     "type": "int",
     "hint": "防止活跃群聊瞬间消耗大量 API 请求的全局限流保护",
     "default": 60
   },
   "enable_cache": {
-    "description": "启用 TypeSafe 判断缓存",
+    "description": "启用 SystemOne 判定缓存",
     "type": "bool",
     "hint": "是否对短时间内重复收到的相同消息复用判断结果",
     "default": false

@@ -1,5 +1,5 @@
 /* ============================================================
-   TypeSafe 配置中心 · 状态视图与试判视图
+   SystemOne 配置中心 · 状态视图与试判视图
    ============================================================ */
 (function () {
   'use strict';
@@ -40,7 +40,7 @@
 
     /* 指标卡 */
     const stats = el('div', 'stat-grid');
-    stats.appendChild(statCard('TypeSafe API', s.api_configured ? '已配置' : '未配置', s.api_configured ? '密钥就绪' : '请填写 API Key'));
+    stats.appendChild(statCard('SystemOne API', s.api_configured ? '已配置' : '未配置', s.api_configured ? '密钥就绪' : '请填写 API Key'));
     stats.appendChild(statCard('生效模型', s.model || '—', s.custom_model ? '自定义模型' : '预设模型'));
     stats.appendChild(statCard('活跃会话', format.num(s.active_sessions), '内存中保留的上下文'));
     stats.appendChild(statCard('限流用量', format.num(s.rate_limit_used) + ' / ' + format.num(s.rate_limit_per_minute), '本分钟已发出请求'));
@@ -127,7 +127,7 @@
     const box = $('#probe-result');
     if (button) button.classList.add('is-busy');
     TS.show(box, true);
-    if (box) box.innerHTML = '<span class="pill pill-brand">正在请求 TypeSafe…</span>';
+    if (box) box.innerHTML = '<span class="pill pill-brand">正在请求 SystemOne…</span>';
     try {
       const result = await TS.api.probe();
       if (box) {
@@ -135,7 +135,7 @@
           ? pill('连接正常', 'ok') + ' <span class="field-meta">模型 ' + esc(result.model || '') + ' · 耗时 ' + format.ms(result.elapsed_ms) + '</span>'
           : pill('连接失败', 'bad') + ' <span class="field-meta">' + esc(result.message || '未知错误') + '</span>';
       }
-      TS.toast(result.ok ? 'TypeSafe 连接正常' : 'TypeSafe 连接失败', result.ok ? 'ok' : 'err');
+      TS.toast(result.ok ? 'SystemOne 连接正常' : 'SystemOne 连接失败', result.ok ? 'ok' : 'err');
     } catch (error) {
       if (box) box.innerHTML = pill('请求异常', 'bad') + ' <span class="field-meta">' + esc(error && error.message ? error.message : error) + '</span>';
       TS.toast('连通性测试失败', 'err');
@@ -194,7 +194,7 @@
     if (!host) return;
     const r = state.tryResult;
     if (!r) {
-      host.innerHTML = '<div class="empty">输入一段消息后点击「开始试判」，这里会显示 TypeSafe 的结构化裁决结果。</div>';
+      host.innerHTML = '<div class="empty">输入一段消息后点击「开始试判」，这里会显示 SystemOne 的结构化裁决结果。</div>';
       return;
     }
     host.textContent = '';
@@ -209,7 +209,7 @@
     const text = el('div', 'verdict-text');
     text.appendChild(el('b', null, r.would_reply ? '综合闸门通过：会主动回复' : '综合闸门未通过：保持静默'));
     text.appendChild(el('span', null,
-      'TypeSafe 判定 ' + (r.should_reply ? '需要回复' : '无需回复')
+      'SystemOne 判定 ' + (r.should_reply ? '需要回复' : '无需回复')
       + ' · 意图「' + r.reply_type_display + '」'
       + ' · 置信度 ' + r.confidence_level + '（' + Number(r.confidence_score).toFixed(2) + '）'));
     verdict.appendChild(text);
@@ -219,7 +219,7 @@
     const gates = el('div', 'gate-list');
     gates.style.marginTop = '14px';
     gates.appendChild(gateRow(
-      'TypeSafe 建议回复',
+      'SystemOne 建议回复',
       r.should_reply,
       r.should_reply ? '是' : '否'
     ));

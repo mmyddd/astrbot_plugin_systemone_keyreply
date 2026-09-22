@@ -1,0 +1,8 @@
+{
+  "title": {
+    "i18n_key": "pages.systemone-console.title"
+  },
+  "description": {
+    "i18n_key": "pages.systemone-console.desc"
+  }
+}

@@ -1,5 +1,5 @@
 /* ============================================================
-   TypeSafe 配置中心 · 配置视图
+   SystemOne 配置中心 · 配置视图
    字段定义（分组/类型/选项/说明） + 渲染 + 收集 + 脏标记
    ============================================================ */
 (function () {
@@ -24,22 +24,22 @@
         { key: 'ignore_bots', type: 'bool', label: '忽略机器人自己的消息', desc: '避免把其他机器人的发言当作聊天内容。' },
         { key: 'ignore_commands', type: 'bool', label: '忽略 AstrBot 命令', desc: '以指令前缀开头的消息不参与判定。' },
         { key: 'ignore_pure_media', type: 'bool', label: '忽略纯媒体/图片表情消息', desc: '纯图片、表情包、CQ 码占位符直接丢弃，节省判定开销。' },
-        { key: 'context_message_count', type: 'select', label: 'TypeSafe 上下文消息数量', options: [0, 3, 5, 10], desc: '作为判定依据的最近聊天消息条数。', hint: '0 表示不带上下文，仅看当前消息' }
+        { key: 'context_message_count', type: 'select', label: 'SystemOne 上下文消息数量', options: [0, 3, 5, 10], desc: '作为判定依据的最近聊天消息条数。', hint: '0 表示不带上下文，仅看当前消息' }
       ]
     },
     {
-      id: 'typesafe',
-      title: 'TypeSafe 判定',
-      desc: '决策层：正则召回命中后，由 TypeSafe AI 判定这条消息是否真的在问这件事。',
+      id: 'systemone',
+      title: 'SystemOne 判定',
+      desc: '决策层：正则召回命中后，交由 SystemOne（TypeSafe AI）判定这条消息是否真的在问这件事。',
       fields: [
-        { key: 'typesafe_api_key', type: 'secret', label: 'TypeSafe API Key', desc: '在 console.typesafe.ai 获取。已保存的密钥以掩码显示，保持掩码即为不修改。', hint: 'ts_...' },
-        { key: 'typesafe_base_url', type: 'text', label: 'TypeSafe API Base URL', desc: '接口根地址，插件会自动在其后追加 /v1/systemone 后缀，因此只填到域名即可（如 https://api.typesafe.ai），不要带上 /v1/systemone；留空使用官方地址。漏写 https:// 或误带后缀都会被自动纠正。', hint: 'https://api.typesafe.ai', wide: true },
-        { key: 'typesafe_model', type: 'select', label: 'TypeSafe 判定模型', options: ['jev-latest (推荐最新旗舰)', 'jev', '自定义模型'], desc: '用于结构化裁决的模型。' },
-        { key: 'typesafe_custom_model', type: 'text', label: 'TypeSafe 自定义模型名称', desc: '当判定模型选择「自定义模型」时生效。', hint: '例如 jev-1.13.0', dependsOn: { key: 'typesafe_model', value: '自定义模型' } },
-        { key: 'typesafe_timeout', type: 'int', label: 'TypeSafe API 超时时间 (秒)', desc: '单次裁决请求的超时时间，超时按失败处理策略降级。', min: 1, max: 120 },
-        { key: 'failure_mode', type: 'select', label: 'TypeSafe 失败处理策略', options: ['静默，不回复', '基础规则判断 (问号回复)', '直通 AstrBot'], desc: '超时、限流或网络异常时的降级方式。' },
-        { key: 'rate_limit_per_minute', type: 'int', label: 'TypeSafe 每分钟最大请求数', desc: '本地滑动窗口限流，防止超出服务端额度。', min: 1, max: 600 },
-        { key: 'enable_cache', type: 'bool', label: '启用 TypeSafe 判断缓存', desc: '相同消息在缓存有效期内复用判定结果，减少请求。' },
+        { key: 'systemone_api_key', type: 'secret', label: 'SystemOne API Key', desc: '已保存的密钥以掩码显示，保持掩码即为不修改。', hint: 'sk_...' },
+        { key: 'systemone_base_url', type: 'text', label: 'SystemOne API Base URL', desc: '接口根地址，插件会自动在其后追加 /v1/systemone 后缀，因此只填到域名即可（如 https://api.typesafe.ai），不要带上 /v1/systemone；留空使用官方地址。漏写 https:// 或误带后缀都会被自动纠正。', hint: 'https://api.typesafe.ai', wide: true },
+        { key: 'systemone_model', type: 'select', label: 'SystemOne 判定模型', options: ['jev-latest (推荐最新旗舰)', 'jev', '自定义模型'], desc: '用于结构化裁决的模型。' },
+        { key: 'systemone_custom_model', type: 'text', label: 'SystemOne 自定义模型名称', desc: '当判定模型选择「自定义模型」时生效。', hint: '例如 jev-1.13.0', dependsOn: { key: 'systemone_model', value: '自定义模型' } },
+        { key: 'systemone_timeout', type: 'int', label: 'SystemOne API 超时时间 (秒)', desc: '单次裁决请求的超时时间，超时按失败处理策略降级。', min: 1, max: 120 },
+        { key: 'failure_mode', type: 'select', label: 'SystemOne 失败处理策略', options: ['静默，不回复', '基础规则判断 (问号回复)', '直通 AstrBot'], desc: '超时、限流或网络异常时的降级方式。' },
+        { key: 'rate_limit_per_minute', type: 'int', label: 'SystemOne 每分钟最大请求数', desc: '本地滑动窗口限流，防止超出服务端额度。', min: 1, max: 600 },
+        { key: 'enable_cache', type: 'bool', label: '启用 SystemOne 判定缓存', desc: '相同消息在缓存有效期内复用判定结果，减少请求。' },
         { key: 'cache_ttl', type: 'int', label: '缓存有效期 (秒)', desc: '判定结果的复用时长。', min: 1, max: 3600 },
       ]
     },

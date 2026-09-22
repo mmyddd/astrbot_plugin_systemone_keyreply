@@ -1,10 +1,10 @@
 {
   "metadata": {
-    "display_name": "TypeSafe 智能自动回复"
+    "display_name": "SystemOne 智能自动回复"
   },
   "pages": {
-    "typesafe-console": {
-      "title": "TypeSafe 配置中心",
+    "systemone-console": {
+      "title": "SystemOne 配置中心",
       "desc": "编辑判定与回复策略、查看运行状态、在线试判消息意图。"
     }
   }
