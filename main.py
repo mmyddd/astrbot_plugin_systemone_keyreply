@@ -217,7 +217,7 @@ def _mask_secret(value: object) -> str:
 
 
 # 插件版本：@register 与状态 API 共用同一来源，避免两处不一致
-PLUGIN_VERSION = "1.0.3"
+PLUGIN_VERSION = "1.0.4"
 
 
 @register(

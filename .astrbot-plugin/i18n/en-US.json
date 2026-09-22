@@ -1,6 +1,8 @@
 {
   "metadata": {
-    "display_name": "SystemOne Auto Reply"
+    "display_name": "SystemOne Auto Reply",
+    "short_desc": "Keyword auto-reply plugin driven by a fixed Q&A table",
+    "desc": "A keyword auto-reply plugin driven by a fixed Q&A table: a local regex first recalls a matching question, and only on a hit does TypeSafe AI's SystemOne judge whether the message is a real question before the canned answer is sent."
   },
   "pages": {
     "systemone-console": {

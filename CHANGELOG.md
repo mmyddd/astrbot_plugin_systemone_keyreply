@@ -3,6 +3,23 @@
 本插件为 **astrbot_plugin_systemone_keyreply**（v1.0.3 起由 `astrbot_plugin_typesafe_keyreply` 改名而来），在 KeyReply 与 TypeSafe 智能自动回复两个项目基础上重构而来，
 详见 [README 的致谢与来源声明](README.md#致谢与来源声明)。以下记录从本插件自身 1.0.0 起的变更。
 
+## [1.0.4] - 2026-09-23
+
+### 修复
+
+- **插件名与插件页面名在 WebUI 里显示成原始 id**：`metadata.yaml` 补齐 `display_name` 与 `short_desc`。
+  AstrBot 的展示名解析顺序是「i18n 的 `metadata` 覆盖 → `metadata.yaml` 的
+  `display_name` / `short_desc` / `desc` → 机器标识 `name`」，此前第二环缺失，
+  只要 i18n 未命中（版本不支持、界面语言不匹配或安装副本不同步），展示名就会掉到最后一环。
+- 语言文件补全 `metadata.short_desc` 与 `metadata.desc`（zh-CN 与 en-US），
+  英文界面下不再回落到中文描述。
+
+### 测试
+
+- 新增 `tests/test_i18n_consistency.py`（37 项）：守住展示名链条、i18n 顶层键白名单、
+  `pages/<目录>` 与 i18n `pages` 键双向对齐、`_page.json` 的 `i18n_key` 可解析，
+  以及 zh-CN 的 metadata 与 metadata.yaml 不漂移。
+
 ## [1.0.3] - 2026-09-23
 
 ### 改名
