@@ -523,15 +523,15 @@
     const btn = $('#qa-cfg-save');
     if (btn) btn.classList.add('is-busy');
     try {
-      const entries = editingKey
-        ? ((currentTable() && currentTable().entries) || [])
-        : [];
+      /* 这里【刻意不提交 entries】：弹窗只负责「服务哪些群号 + 名称」，
+         问答对由问答表编辑页维护，后端在缺省 entries 时原样保留。
+         曾经把 currentTable() 的问答对一并提交，当选中表不是本表时
+         （默认就是全局表，且很可能没有问答对）会把本表的问答对整体覆盖掉。 */
       const result = await TS.api.qaSave({
         key: editingKey || undefined,
         scope: 'group',
         ids: editingIds,
-        name: name,
-        entries: entries
+        name: name
       });
       state.qaTableKey = (result && result.table && result.table.key) || editingKey;
       state.qaDirty = false;
@@ -627,7 +627,10 @@
         scope_id: s.scope_id,
         ids: t ? t.ids : (s.scope_id ? [s.scope_id] : []),
         name: t ? t.name : '',
-        entries: collectDraft()
+        entries: collectDraft(),
+        // 编辑页是问答对的唯一来源：这里明确允许用空列表清空
+        // （后端默认拒绝空列表覆盖非空表，防止误清空）
+        allow_empty: true
       });
       state.qaDirty = false;
       TS.toast('问答表已保存', 'ok');

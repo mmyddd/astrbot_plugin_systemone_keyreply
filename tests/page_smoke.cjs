@@ -376,6 +376,54 @@ t('qa 打开群配置弹窗', () => {
   TS.qa.closeTableConfig();
 });
 
+t('qa 群配置保存不提交问答对（防误覆盖其它表）', async () => {
+  TS.state.qa = qaFixture();
+  TS.state.qaTableKey = 'global';   // 事故条件：当前选中的是没有问答对的全局表
+  TS.qa.loadDraft();
+  TS.qa.bind();
+  const saved = [];
+  const origSave = TS.api.qaSave, origList = TS.api.qaList;
+  TS.api.qaSave = payload => { saved.push(payload); return Promise.resolve({ table: { key: 'group:111' } }); };
+  TS.api.qaList = () => Promise.resolve(qaFixture());
+  try {
+    TS.qa.openTableConfig(TS.state.qa.tables.find(x => x.key === 'group:111'));
+    hosts['#qa-cfg-id'].value = '999';
+    TS.qa.addIdFromInput();
+    await hosts['#qa-cfg-save']._ev.click();
+    if (saved.length !== 1) throw new Error('未发出保存请求: ' + saved.length);
+    if ('entries' in saved[0]) {
+      throw new Error('群配置保存不应提交 entries，实际提交了 '
+        + JSON.stringify(saved[0].entries).slice(0, 120));
+    }
+    if (saved[0].key !== 'group:111') throw new Error('保存目标表不正确: ' + saved[0].key);
+    const ids = saved[0].ids || [];
+    if (ids.length !== 3 || ids.indexOf('999') < 0) throw new Error('ids 不正确: ' + JSON.stringify(ids));
+  } finally {
+    TS.api.qaSave = origSave; TS.api.qaList = origList;
+    TS.qa.closeTableConfig();
+  }
+});
+
+t('qa 编辑页保存提交 entries 并显式允许清空', async () => {
+  TS.state.qa = qaFixture();
+  TS.state.qaTableKey = 'group:111';
+  TS.qa.loadDraft();
+  TS.qa.bind();
+  const saved = [];
+  const origSave = TS.api.qaSave, origList = TS.api.qaList;
+  TS.api.qaSave = payload => { saved.push(payload); return Promise.resolve({ table: { key: 'group:111' } }); };
+  TS.api.qaList = () => Promise.resolve(qaFixture());
+  try {
+    await hosts['#qa-save-btn']._ev.click();
+    if (saved.length !== 1) throw new Error('未发出保存请求: ' + saved.length);
+    if (!Array.isArray(saved[0].entries)) throw new Error('编辑页保存必须提交 entries 数组');
+    if (saved[0].entries.length !== 4) throw new Error('提交的问答对数量异常: ' + saved[0].entries.length);
+    if (saved[0].allow_empty !== true) throw new Error('编辑页保存应显式声明 allow_empty');
+  } finally {
+    TS.api.qaSave = origSave; TS.api.qaList = origList;
+  }
+});
+
 t('qa 空表渲染占位', () => {
   TS.state.qaTableKey = 'group:333';
   TS.qa.loadDraft();

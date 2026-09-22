@@ -4,7 +4,7 @@ import asyncio
 import re
 import shutil
 from pathlib import Path
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, Optional
 
 plugin_dir = str(Path(__file__).parent.resolve())
 if plugin_dir not in sys.path:
@@ -217,7 +217,7 @@ def _mask_secret(value: object) -> str:
 
 
 # 插件版本：@register 与状态 API 共用同一来源，避免两处不一致
-PLUGIN_VERSION = "1.0.4"
+PLUGIN_VERSION = "1.0.5"
 
 
 @register(
@@ -1272,8 +1272,25 @@ class SystemOneKeyReplyPlugin(Star):
             "context_message_count": self.context_message_count,
         }
 
+    def _peek_qa_table(self, key: Optional[str], scope: str, scope_id: str):
+        """只读地定位某张表（不创建），用于保存前的一致性检查。"""
+        store = self.qa_store
+        if key:
+            table = store.get_table_by_key(key)
+            if table is not None:
+                return table
+        if scope == SCOPE_GLOBAL:
+            return store.get_table_by_key(SCOPE_GLOBAL)
+        if scope_id:
+            return store.find_table_by_id(scope, scope_id)
+        return None
+
     async def _api_qa_save(self):
-        """保存某个作用域的问答表（整体替换）。"""
+        """保存某个作用域的问答表。
+
+        entries 传数组时整体替换；【省略 entries】表示只更新服务 ID 列表与名称，
+        问答对保持原样——「群配置」弹窗改群号时走的就是这条路径。
+        """
         from quart import request
 
         payload = await request.get_json(silent=True) or {}
@@ -1283,11 +1300,12 @@ class SystemOneKeyReplyPlugin(Star):
         table_key = str(payload.get("key") or "").strip() or None
         name = payload.get("name")
         raw_ids = payload.get("ids")
+        allow_empty = bool(payload.get("allow_empty"))
 
         if scope not in (SCOPE_GLOBAL, SCOPE_GROUP, SCOPE_PRIVATE):
             return {"message": f"未知作用域: {scope}"}, 400
-        if not isinstance(entries, list):
-            return {"message": "entries 必须是数组"}, 400
+        if entries is not None and not isinstance(entries, list):
+            return {"message": "entries 必须是数组，或省略该项以保留原有问答对"}, 400
 
         # 多群一域：ids 为服务 ID 列表；未传时退回单个 scope_id
         ids: Optional[list] = None
@@ -1298,6 +1316,22 @@ class SystemOneKeyReplyPlugin(Star):
 
         if scope in (SCOPE_GROUP, SCOPE_PRIVATE) and not ids:
             return {"message": "群聊/私聊专属表至少需要一个 ID（群号或用户 QQ）"}, 400
+
+        # 数据安全网：拒绝用空列表清空已有问答对。
+        # 只有承载问答对的编辑页（显式带 allow_empty）才允许把表清空，
+        # 避免任何「只改群号/名称」的请求把用户的问答对一起抹掉。
+        if isinstance(entries, list) and not entries and not allow_empty:
+            target = self._peek_qa_table(
+                table_key, scope, scope_id or (ids[0] if ids else "")
+            )
+            if target is not None and target.entries:
+                return {
+                    "message": (
+                        f"已阻止：这次请求会用空列表覆盖「{target.label}」里已有的 "
+                        f"{len(target.entries)} 条问答对。"
+                        "如确实要清空，请在问答表编辑页删除全部问答对后保存。"
+                    )
+                }, 400
 
         table = self.qa_store.replace_table(
             scope,

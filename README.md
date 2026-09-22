@@ -210,7 +210,13 @@ pip install -r astrbot_plugin_systemone_keyreply/requirements.txt
 | 问答表 | `data/plugin_data/astrbot_plugin_systemone_keyreply/qa_tables.json` |
 | KeyReply 来源文件（只读探测） | `data/plugins/keyword_reply/triggers.yml` |
 
-问答表使用 JSON 存储，支持全局默认表、按群独立表与按私聊独立表三级作用域。
+问答表使用 JSON 存储，支持全局默认表、按群独立表与按私聊独立表三级作用域；
+一张表可以同时服务多个群（多群一域），服务范围在「群配置」弹窗里维护。
+
+> [!TIP]
+> 问答表的全部内容就是 `qa_tables.json` 这一个文件，建议定期把它复制到安全位置备份。
+> 需要回滚时，把备份文件放回 `data/plugin_data/astrbot_plugin_systemone_keyreply/qa_tables.json`
+> 并重载插件即可；旧格式（缺少 `ids` 或 `answer_key`）也能兼容载入。
 
 ---
 

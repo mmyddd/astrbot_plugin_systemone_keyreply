@@ -609,7 +609,7 @@ class QAStore:
         self,
         scope: str,
         scope_id: str,
-        entries: Iterable[Any],
+        entries: Optional[Iterable[Any]],
         answers: Optional[Dict[str, Any]] = None,
         ids: Optional[Iterable[str]] = None,
         name: Optional[str] = None,
@@ -618,6 +618,10 @@ class QAStore:
         """整体替换某张表的内容（含答案池、服务 ID 列表与名称）。
 
         key 给定时按存储主键精确指向目标表，避免改 ID 列表时找不到原表。
+
+        entries 传 None 表示【不改动问答对】，只更新服务 ID 列表与名称——
+        「群配置」弹窗走的就是这条路径。它不承载问答对，因此绝不能拿别处的
+        问答对来整体替换本表（历史上正是这样清空过用户的问答表）。
         """
         table = None
         if key:
@@ -635,11 +639,12 @@ class QAStore:
         if name is not None:
             table.name = str(name).strip()
 
-        table.entries = []
-        for item in entries or []:
-            norm = normalize_entry(item)
-            if norm:
-                table.entries.append(norm)
+        if entries is not None:
+            table.entries = []
+            for item in entries:
+                norm = normalize_entry(item)
+                if norm:
+                    table.entries.append(norm)
         if answers is not None:
             table.answers = {}
             if isinstance(answers, dict):

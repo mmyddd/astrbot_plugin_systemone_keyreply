@@ -3,6 +3,6 @@ display_name: SystemOne 智能自动回复
 short_desc: 固定问答表驱动的自动关键词回复插件
 desc: 固定问答表驱动的自动关键词回复插件。消息先经本地正则召回，命中后由 TypeSafe AI 的 SystemOne 判定是否真提问，再回复标准答案。
 help: https://github.com/mmyddd/astrbot_plugin_systemone_keyreply
-version: v1.0.4
+version: v1.0.5
 author: mmyddd
 repo: https://github.com/mmyddd/astrbot_plugin_systemone_keyreply
