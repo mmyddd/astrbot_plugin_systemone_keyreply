@@ -260,4 +260,4 @@ pip install -r astrbot_plugin_systemone_keyreply/requirements.txt
 
 ## 开源协议
 
-本项目采用 [MIT 协议](LICENSE) 开源。
+本项目采用 [GPL-3.0 license](LICENSE) 开源。
