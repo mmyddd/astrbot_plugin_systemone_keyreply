@@ -2,7 +2,6 @@
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-Plugin-blue.svg)](https://github.com/AstrBotDevs/AstrBot)
 [![TypeSafe](https://img.shields.io/badge/TypeSafe-Jev%20System%20One-brightgreen.svg)](https://typesafe.ai)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > **让机器人按你写好的标准答案回答，该答的答、不该答的不答。**
 
