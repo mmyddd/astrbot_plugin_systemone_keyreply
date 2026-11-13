@@ -490,7 +490,7 @@ class SystemOneKeyReplyPlugin(Star):
             return
 
         # 日志记录进入决策流水线的消息
-        logger.info(
+        logger.debug(
             f"[SystemOne] [1/4 收到消息] 会话: {session_id} | 发送者: {sender_name}({sender_id}) | 内容: \"{display_msg}\""
         )
 
